@@ -1,0 +1,21 @@
+# API-only requirements (lightweight)
+# Core FastAPI dependencies
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-dotenv==1.0.1
+
+# Database and storage
+qdrant-client==1.9.0
+redis==5.0.7
+azure-storage-blob==12.25.1
+
+# HTTP and utilities
+requests==2.31.0
+pydantic==2.11.3
+loguru
+
+# Date and time
+pytz==2024.1
+
+# JSON handling
+typing-extensions==4.13.1

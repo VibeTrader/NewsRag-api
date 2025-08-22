@@ -53,8 +53,8 @@ class QdrantClientWrapper:
         logger.info(f"Using collection: {self.collection_name}")
         logger.info(f"Using Azure OpenAI deployment: {self.embedding_deployment}")
         
-        # Ensure collection exists
-        asyncio.create_task(self._ensure_collection_exists())
+        # Ensure collection exists synchronously
+        self._ensure_collection_exists_sync()
 
     def _get_embedding(self, text: str) -> List[float]:
         """Generate embedding using Azure OpenAI."""
@@ -80,8 +80,8 @@ class QdrantClientWrapper:
             logger.error(f"Error generating batch embeddings: {e}")
             raise
 
-    async def _ensure_collection_exists(self):
-        """Ensures the collection exists with proper configuration."""
+    def _ensure_collection_exists_sync(self):
+        """Ensures the collection exists with proper configuration (synchronous version)."""
         try:
             # Check if collection exists
             collections = self.client.get_collections()

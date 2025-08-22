@@ -19,3 +19,5 @@ pytz==2024.1
 
 # JSON handling
 typing-extensions==4.13.1
+
+sentence-transformers==3.0.0

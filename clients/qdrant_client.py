@@ -7,7 +7,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import UnexpectedResponse
 import numpy as np
-from openai import AzureOpenAI
 
 # Load environment variables
 load_dotenv()
@@ -38,46 +37,42 @@ class QdrantClientWrapper:
             timeout=30.0
         )
         
-        # Initialize Azure OpenAI client for embeddings
-        self.openai_client = AzureOpenAI(
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
-        )
-        
-        # Embedding model configuration
-        self.embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
-        self.embedding_dimension = int(os.getenv("EMBEDDING_DIMENSION", "1536"))  # ada-002: 1536, text-embedding-3-small: 1536, text-embedding-3-large: 3072
+        # Embedding model configuration (for search queries only)
+        self.embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "embedding-stocks")
+        self.embedding_dimension = int(os.getenv("EMBEDDING_DIMENSION", "3072"))  # text-embedding-3-large: 3072
         
         logger.info(f"QdrantClient initialized for URL: {self.url}")
         logger.info(f"Using collection: {self.collection_name}")
-        logger.info(f"Using Azure OpenAI deployment: {self.embedding_deployment}")
+        logger.info(f"Using embedding deployment: {self.embedding_deployment} (dimensions: {self.embedding_dimension})")
         
         # Ensure collection exists synchronously
         self._ensure_collection_exists_sync()
 
-    def _get_embedding(self, text: str) -> List[float]:
-        """Generate embedding using Azure OpenAI."""
+
+
+    def _get_embedding_for_search(self, text: str) -> List[float]:
+        """Generate embedding for search queries using Azure OpenAI.
+        This is needed because search queries need to be converted to vectors
+        to find similar articles in the database."""
         try:
-            response = self.openai_client.embeddings.create(
+            # Import here to avoid dependency if not needed
+            from openai import AzureOpenAI
+            
+            # Initialize OpenAI client for search queries only
+            openai_client = AzureOpenAI(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
+                azure_endpoint=os.getenv("OPENAI_BASE_URL")
+            )
+            
+            response = openai_client.embeddings.create(
                 input=text,
                 model=self.embedding_deployment
             )
             return response.data[0].embedding
+            
         except Exception as e:
-            logger.error(f"Error generating embedding: {e}")
-            raise
-
-    def _get_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for multiple texts using Azure OpenAI."""
-        try:
-            response = self.openai_client.embeddings.create(
-                input=texts,
-                model=self.embedding_deployment
-            )
-            return [data.embedding for data in response.data]
-        except Exception as e:
-            logger.error(f"Error generating batch embeddings: {e}")
+            logger.error(f"Error generating search embedding: {e}")
             raise
 
     def _ensure_collection_exists_sync(self):
@@ -127,125 +122,19 @@ class QdrantClientWrapper:
             logger.info("QdrantClient closed.")
 
     async def check_health(self) -> bool:
-        """Checks the health of both Qdrant and Azure OpenAI services."""
+        """Checks the health of Qdrant service."""
         try:
             # Test Qdrant connection
             collections = self.client.get_collections()
             logger.info(f"Qdrant health check successful. Found {len(collections.collections)} collections.")
-            
-            # Test Azure OpenAI connection
-            test_embedding = self._get_embedding("health check")
-            logger.info(f"Azure OpenAI health check successful. Embedding dimension: {len(test_embedding)}")
-            
             return True
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return False
 
-    async def add_document(self, text_content: str, metadata: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        """Adds a document to the Qdrant collection using Azure OpenAI embeddings.
-        
-        Args:
-            text_content: The text content to embed and store.
-            metadata: Optional metadata to store with the document.
-            
-        Returns:
-            Dictionary with status and document ID, or None on failure.
-        """
-        try:
-            # Generate embedding using Azure OpenAI
-            embedding = self._get_embedding(text_content)
-            
-            # Prepare payload
-            payload = {
-                "text": text_content,
-                "text_length": len(text_content)
-            }
-            
-            # Add metadata to payload
-            if metadata:
-                payload.update(metadata)
-            
-            # Generate unique ID
-            import hashlib
-            content_hash = hashlib.md5(f"{text_content}{str(metadata)}".encode()).hexdigest()
-            
-            # Upsert point (insert or update)
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=[
-                    models.PointStruct(
-                        id=content_hash,
-                        vector=embedding,
-                        payload=payload
-                    )
-                ]
-            )
-            
-            logger.info(f"Successfully added document with ID: {content_hash}")
-            return {
-                "status": "success",
-                "document_id": content_hash,
-                "message": "Document added successfully"
-            }
-            
-        except Exception as e:
-            logger.error(f"Error adding document to Qdrant: {e}")
-            return None
 
-    async def add_documents_batch(self, documents: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Add multiple documents in batch for better performance.
-        
-        Args:
-            documents: List of documents, each with 'text' and optional 'metadata'.
-            
-        Returns:
-            Dictionary with status and count of added documents.
-        """
-        try:
-            texts = [doc['text'] for doc in documents]
-            
-            # Generate embeddings in batch (more efficient)
-            embeddings = self._get_embeddings_batch(texts)
-            
-            # Prepare points for batch insert
-            points = []
-            for i, doc in enumerate(documents):
-                import hashlib
-                content_hash = hashlib.md5(f"{doc['text']}{str(doc.get('metadata', {}))}".encode()).hexdigest()
-                
-                payload = {
-                    "text": doc['text'],
-                    "text_length": len(doc['text'])
-                }
-                
-                if doc.get('metadata'):
-                    payload.update(doc['metadata'])
-                
-                points.append(
-                    models.PointStruct(
-                        id=content_hash,
-                        vector=embeddings[i],
-                        payload=payload
-                    )
-                )
-            
-            # Batch upsert
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=points
-            )
-            
-            logger.info(f"Successfully added {len(points)} documents in batch")
-            return {
-                "status": "success",
-                "added_count": len(points),
-                "message": f"Added {len(points)} documents successfully"
-            }
-            
-        except Exception as e:
-            logger.error(f"Error adding documents batch to Qdrant: {e}")
-            return None
+
+    
 
     async def search_documents(self, query: str, limit: int = 10, score_threshold: float = 0.7) -> Optional[List[Dict[str, Any]]]:
         """Searches for documents similar to the query using Azure OpenAI embeddings.
@@ -259,8 +148,8 @@ class QdrantClientWrapper:
             List of matching documents with scores, or None on failure.
         """
         try:
-            # Generate query embedding using Azure OpenAI
-            query_embedding = self._get_embedding(query)
+            # Generate query embedding using Azure OpenAI for search
+            query_embedding = self._get_embedding_for_search(query)
             
             # Search in collection
             search_results = self.client.search(

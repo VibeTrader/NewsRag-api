@@ -30,10 +30,6 @@ app.add_middleware(
 )
 
 # Pydantic models
-class DocumentRequest(BaseModel):
-    text: str
-    metadata: Optional[Dict[str, Any]] = None
-
 class SearchRequest(BaseModel):
     query: str
     limit: Optional[int] = 10
@@ -87,31 +83,7 @@ async def health_check(client: QdrantClientWrapper = Depends(get_qdrant_client))
             collection_stats=None
         )
 
-# Add document endpoint
-@app.post("/documents/text")
-async def add_document(
-    request: DocumentRequest,
-    client: QdrantClientWrapper = Depends(get_qdrant_client)
-):
-    """Add a text document to the vector database."""
-    try:
-        result = await client.add_document(
-            text_content=request.text,
-            metadata=request.metadata
-        )
-        
-        if result:
-            return {
-                "status": "success",
-                "document_id": result.get("document_id"),
-                "message": result.get("message", "Document added successfully")
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to add document")
-            
-    except Exception as e:
-        logger.error(f"Error adding document: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Search documents endpoint
 @app.post("/search", response_model=SearchResponse)
@@ -204,7 +176,6 @@ async def root():
         "description": "FastAPI service for news article search using Qdrant vector database",
         "endpoints": {
             "health": "/health",
-            "add_document": "/documents/text",
             "search": "/search",
             "delete_old": "/documents/older-than/{hours}",
             "clear_all": "/documents",

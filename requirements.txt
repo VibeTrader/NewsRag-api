@@ -11,7 +11,7 @@ requests>=2.31.0
 # Vector database
 qdrant-client==1.7.0
 
-# Azure OpenAI (replaces SentenceTransformer) - Fixed versions for compatibility
+# Azure OpenAI (for search queries only)
 openai>=1.101.0
 httpx==0.28.1
 httpcore==1.0.9

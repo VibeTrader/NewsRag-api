@@ -43,3 +43,5 @@ chmod +x deploy-api.sh
 - Qdrant (vector database)
 - Redis (caching)
 - Azure Blob Storage (archival)
+
+

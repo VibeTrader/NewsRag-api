@@ -103,7 +103,7 @@ class QdrantClientWrapper:
                 self.client.create_payload_index(
                     collection_name=self.collection_name,
                     field_name="publishDatePst",
-                    field_schema=models.PayloadFieldSchema.DATETIME
+                    field_schema=models.PayloadFieldSchema.INTEGER  # Use INTEGER for timestamp
                 )
                 
                 self.client.create_payload_index(

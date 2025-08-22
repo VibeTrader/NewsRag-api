@@ -7,16 +7,16 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import UnexpectedResponse
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from openai import AzureOpenAI
 
 # Load environment variables
 load_dotenv()
 
 class QdrantClientWrapper:
-    """Client for interacting with Qdrant Cloud vector database."""
+    """Client for interacting with Qdrant Cloud vector database with Azure OpenAI embeddings."""
 
     def __init__(self, url: Optional[str] = None, api_key: Optional[str] = None):
-        """Initializes the Qdrant client.
+        """Initializes the Qdrant client with Azure OpenAI embeddings.
 
         Args:
             url: The Qdrant Cloud URL. If None, loads from QDRANT_URL environment variable.
@@ -38,14 +38,47 @@ class QdrantClientWrapper:
             timeout=30.0
         )
         
-        # Initialize embedding model
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Initialize Azure OpenAI client for embeddings
+        self.openai_client = AzureOpenAI(
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+        )
+        
+        # Embedding model configuration
+        self.embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
+        self.embedding_dimension = int(os.getenv("EMBEDDING_DIMENSION", "1536"))  # ada-002: 1536, text-embedding-3-small: 1536, text-embedding-3-large: 3072
         
         logger.info(f"QdrantClient initialized for URL: {self.url}")
         logger.info(f"Using collection: {self.collection_name}")
+        logger.info(f"Using Azure OpenAI deployment: {self.embedding_deployment}")
         
-        # Ensure collection exists (run synchronously to avoid async issues)
-        # asyncio.create_task(self._ensure_collection_exists())
+        # Ensure collection exists
+        asyncio.create_task(self._ensure_collection_exists())
+
+    def _get_embedding(self, text: str) -> List[float]:
+        """Generate embedding using Azure OpenAI."""
+        try:
+            response = self.openai_client.embeddings.create(
+                input=text,
+                model=self.embedding_deployment
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"Error generating embedding: {e}")
+            raise
+
+    def _get_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for multiple texts using Azure OpenAI."""
+        try:
+            response = self.openai_client.embeddings.create(
+                input=texts,
+                model=self.embedding_deployment
+            )
+            return [data.embedding for data in response.data]
+        except Exception as e:
+            logger.error(f"Error generating batch embeddings: {e}")
+            raise
 
     async def _ensure_collection_exists(self):
         """Ensures the collection exists with proper configuration."""
@@ -57,16 +90,16 @@ class QdrantClientWrapper:
             if self.collection_name not in collection_names:
                 logger.info(f"Creating collection: {self.collection_name}")
                 
-                # Create collection with proper configuration
+                # Create collection with Azure OpenAI embedding dimensions
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=models.VectorParams(
-                        size=384,  # all-MiniLM-L6-v2 embedding size
+                        size=self.embedding_dimension,  # Azure OpenAI embedding size
                         distance=models.Distance.COSINE
                     )
                 )
                 
-                # Create payload index for efficient filtering
+                # Create payload indexes for efficient filtering
                 self.client.create_payload_index(
                     collection_name=self.collection_name,
                     field_name="publishDatePst",
@@ -94,18 +127,23 @@ class QdrantClientWrapper:
             logger.info("QdrantClient closed.")
 
     async def check_health(self) -> bool:
-        """Checks the health of the Qdrant service."""
+        """Checks the health of both Qdrant and Azure OpenAI services."""
         try:
-            # Get collections to test connection
+            # Test Qdrant connection
             collections = self.client.get_collections()
             logger.info(f"Qdrant health check successful. Found {len(collections.collections)} collections.")
+            
+            # Test Azure OpenAI connection
+            test_embedding = self._get_embedding("health check")
+            logger.info(f"Azure OpenAI health check successful. Embedding dimension: {len(test_embedding)}")
+            
             return True
         except Exception as e:
-            logger.error(f"Qdrant health check failed: {e}")
+            logger.error(f"Health check failed: {e}")
             return False
 
     async def add_document(self, text_content: str, metadata: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        """Adds a document to the Qdrant collection.
+        """Adds a document to the Qdrant collection using Azure OpenAI embeddings.
         
         Args:
             text_content: The text content to embed and store.
@@ -115,8 +153,8 @@ class QdrantClientWrapper:
             Dictionary with status and document ID, or None on failure.
         """
         try:
-            # Generate embedding
-            embedding = self.embedding_model.encode(text_content)
+            # Generate embedding using Azure OpenAI
+            embedding = self._get_embedding(text_content)
             
             # Prepare payload
             payload = {
@@ -128,7 +166,7 @@ class QdrantClientWrapper:
             if metadata:
                 payload.update(metadata)
             
-            # Generate unique ID (you might want to use a hash of content + metadata)
+            # Generate unique ID
             import hashlib
             content_hash = hashlib.md5(f"{text_content}{str(metadata)}".encode()).hexdigest()
             
@@ -138,7 +176,7 @@ class QdrantClientWrapper:
                 points=[
                     models.PointStruct(
                         id=content_hash,
-                        vector=embedding.tolist(),
+                        vector=embedding,
                         payload=payload
                     )
                 ]
@@ -155,8 +193,62 @@ class QdrantClientWrapper:
             logger.error(f"Error adding document to Qdrant: {e}")
             return None
 
+    async def add_documents_batch(self, documents: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Add multiple documents in batch for better performance.
+        
+        Args:
+            documents: List of documents, each with 'text' and optional 'metadata'.
+            
+        Returns:
+            Dictionary with status and count of added documents.
+        """
+        try:
+            texts = [doc['text'] for doc in documents]
+            
+            # Generate embeddings in batch (more efficient)
+            embeddings = self._get_embeddings_batch(texts)
+            
+            # Prepare points for batch insert
+            points = []
+            for i, doc in enumerate(documents):
+                import hashlib
+                content_hash = hashlib.md5(f"{doc['text']}{str(doc.get('metadata', {}))}".encode()).hexdigest()
+                
+                payload = {
+                    "text": doc['text'],
+                    "text_length": len(doc['text'])
+                }
+                
+                if doc.get('metadata'):
+                    payload.update(doc['metadata'])
+                
+                points.append(
+                    models.PointStruct(
+                        id=content_hash,
+                        vector=embeddings[i],
+                        payload=payload
+                    )
+                )
+            
+            # Batch upsert
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=points
+            )
+            
+            logger.info(f"Successfully added {len(points)} documents in batch")
+            return {
+                "status": "success",
+                "added_count": len(points),
+                "message": f"Added {len(points)} documents successfully"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error adding documents batch to Qdrant: {e}")
+            return None
+
     async def search_documents(self, query: str, limit: int = 10, score_threshold: float = 0.7) -> Optional[List[Dict[str, Any]]]:
-        """Searches for documents similar to the query.
+        """Searches for documents similar to the query using Azure OpenAI embeddings.
         
         Args:
             query: The search query text.
@@ -167,13 +259,13 @@ class QdrantClientWrapper:
             List of matching documents with scores, or None on failure.
         """
         try:
-            # Generate query embedding
-            query_embedding = self.embedding_model.encode(query)
+            # Generate query embedding using Azure OpenAI
+            query_embedding = self._get_embedding(query)
             
             # Search in collection
             search_results = self.client.search(
                 collection_name=self.collection_name,
-                query_vector=query_embedding.tolist(),
+                query_vector=query_embedding,
                 limit=limit,
                 score_threshold=score_threshold
             )
@@ -194,21 +286,14 @@ class QdrantClientWrapper:
             logger.error(f"Error searching documents in Qdrant: {e}")
             return None
 
+    # ... rest of your methods remain the same (delete_document, delete_documents_older_than, etc.)
+    
     async def delete_document(self, document_id: str) -> bool:
-        """Deletes a document from the collection.
-        
-        Args:
-            document_id: The ID of the document to delete.
-            
-        Returns:
-            True if successful, False otherwise.
-        """
+        """Deletes a document from the collection."""
         try:
             self.client.delete(
                 collection_name=self.collection_name,
-                points_selector=models.PointIdsList(
-                    points=[document_id]
-                )
+                points_selector=models.PointIdsList(points=[document_id])
             )
             logger.info(f"Successfully deleted document with ID: {document_id}")
             return True
@@ -217,46 +302,34 @@ class QdrantClientWrapper:
             return False
 
     async def delete_documents_older_than(self, hours: int) -> Optional[Dict[str, Any]]:
-        """Deletes documents older than specified hours.
-        
-        Args:
-            hours: Age threshold in hours.
-            
-        Returns:
-            Dictionary with status and deleted count, or None on failure.
-        """
+        """Deletes documents older than specified hours."""
         try:
             from datetime import datetime, timedelta
             import pytz
             
-            # Calculate cutoff time in PST
             pst = pytz.timezone('US/Pacific')
             cutoff_time = datetime.now(pst) - timedelta(hours=hours)
             
-            # Search for old documents
             old_docs = self.client.scroll(
                 collection_name=self.collection_name,
                 scroll_filter=models.Filter(
                     must=[
                         models.FieldCondition(
                             key="publishDatePst",
-                            range=models.DatetimeRange(
-                                lt=cutoff_time.isoformat()
-                            )
+                            range=models.DatetimeRange(lt=cutoff_time.isoformat())
                         )
                     ]
                 ),
-                limit=1000  # Adjust based on your needs
+                limit=1000
             )
             
-            if not old_docs[0]:  # No documents to delete
+            if not old_docs[0]:
                 return {
                     "status": "no_action",
                     "deleted_count": 0,
                     "message": "No documents older than specified hours found"
                 }
             
-            # Delete old documents
             doc_ids = [doc.id for doc in old_docs[0]]
             self.client.delete(
                 collection_name=self.collection_name,
@@ -275,22 +348,14 @@ class QdrantClientWrapper:
             return None
 
     async def clear_all_documents(self) -> Optional[Dict[str, Any]]:
-        """Clears all documents from the collection.
-        
-        Returns:
-            Dictionary with status and message, or None on failure.
-        """
+        """Clears all documents from the collection."""
         try:
-            # Get collection info to count documents
             collection_info = self.client.get_collection(self.collection_name)
             doc_count = collection_info.points_count
             
-            # Delete all points
             self.client.delete(
                 collection_name=self.collection_name,
-                points_selector=models.FilterSelector(
-                    filter=models.Filter()
-                )
+                points_selector=models.FilterSelector(filter=models.Filter())
             )
             
             logger.info(f"Cleared all {doc_count} documents from collection")
@@ -304,58 +369,16 @@ class QdrantClientWrapper:
             return None
 
     async def get_collection_stats(self) -> Optional[Dict[str, Any]]:
-        """Gets statistics about the collection.
-        
-        Returns:
-            Dictionary with collection statistics, or None on failure.
-        """
+        """Gets statistics about the collection."""
         try:
             collection_info = self.client.get_collection(self.collection_name)
             return {
                 "collection_name": self.collection_name,
                 "points_count": collection_info.points_count,
                 "segments_count": collection_info.segments_count,
-                "status": collection_info.status
+                "status": collection_info.status,
+                "embedding_model": self.embedding_deployment
             }
         except Exception as e:
             logger.error(f"Error getting collection stats: {e}")
             return None
-
-# Example usage for testing
-async def _test_client():
-    """Test function for the Qdrant client."""
-    client = None
-    try:
-        client = QdrantClientWrapper()
-        
-        # Test health check
-        health_ok = await client.check_health()
-        print(f"Health check: {'OK' if health_ok else 'FAILED'}")
-        
-        # Test adding document
-        test_text = "This is a test document for Qdrant integration."
-        test_metadata = {
-            "source": "test",
-            "publishDatePst": "2024-01-01T00:00:00-08:00",
-            "title": "Test Article"
-        }
-        
-        add_result = await client.add_document(test_text, test_metadata)
-        print(f"Add document result: {add_result}")
-        
-        # Test search
-        search_results = await client.search_documents("test document")
-        print(f"Search results: {search_results}")
-        
-        # Test stats
-        stats = await client.get_collection_stats()
-        print(f"Collection stats: {stats}")
-        
-    except Exception as e:
-        print(f"Test failed: {e}")
-    finally:
-        if client:
-            await client.close()
-
-if __name__ == "__main__":
-    asyncio.run(_test_client())

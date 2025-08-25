@@ -19,8 +19,7 @@ azure-core>=1.29.0
 python-dotenv>=1.0.0
 loguru>=0.7.2
 
-# Optional: Caching
-redis>=5.0.1
+
 
 # Optional: Data processing
 numpy>=1.26.0

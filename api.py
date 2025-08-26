@@ -42,6 +42,7 @@ class SearchResponse(BaseModel):
     results: List[Dict[str, Any]]
     total_count: int
     query: str
+    used_threshold: Optional[float] = None # Added for dynamic threshold
 
 class HealthResponse(BaseModel):
     status: str
@@ -94,23 +95,39 @@ async def search_documents(
     request: SearchRequest,
     client: QdrantClientWrapper = Depends(get_qdrant_client)
 ):
-    """Search for documents similar to the query."""
+    """Search for documents similar to the query with dynamic threshold."""
     try:
-        results = await client.search_documents(
-            query=request.query,
-            limit=request.limit,
-            score_threshold=request.score_threshold,
-            use_ai_summary=request.use_ai_summary
-        )
+        # Dynamic threshold: try higher thresholds first, fallback to lower ones
+        thresholds_to_try = [0.7, 0.6, 0.5, 0.4, 0.3]
         
-        if results is not None:
+        # If user specified a custom threshold, use it
+        if request.score_threshold is not None:
+            thresholds_to_try = [request.score_threshold]
+        
+        results = None
+        used_threshold = None
+        
+        for threshold in thresholds_to_try:
+            results = await client.search_documents(
+                query=request.query,
+                limit=request.limit,
+                score_threshold=threshold,
+                use_ai_summary=request.use_ai_summary
+            )
+            
+            if results and len(results) > 0:
+                used_threshold = threshold
+                break
+        
+        if results is not None and len(results) > 0:
             return SearchResponse(
                 results=results,
                 total_count=len(results),
-                query=request.query
+                query=request.query,
+                used_threshold=used_threshold  # Add this to show which threshold was used
             )
         else:
-            raise HTTPException(status_code=500, detail="Search failed")
+            raise HTTPException(status_code=404, detail="No results found with any threshold")
             
     except Exception as e:
         logger.error(f"Error searching documents: {e}")

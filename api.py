@@ -49,9 +49,6 @@ class HealthResponse(BaseModel):
     qdrant_connected: bool
     collection_stats: Optional[Dict[str, Any]] = None
 
-class DeleteRequest(BaseModel):
-    hours: int
-
 # Dependency to get Qdrant client
 async def get_qdrant_client():
     """Dependency to get Qdrant client instance."""
@@ -133,44 +130,6 @@ async def search_documents(
         logger.error(f"Error searching documents: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Delete documents older than endpoint
-@app.delete("/documents/older-than/{hours}")
-async def delete_documents_older_than(
-    hours: int,
-    client: QdrantClientWrapper = Depends(get_qdrant_client)
-):
-    """Delete documents older than specified hours."""
-    try:
-        if hours <= 0:
-            raise HTTPException(status_code=400, detail="Hours must be greater than 0")
-        
-        result = await client.delete_documents_older_than(hours)
-        
-        if result:
-            return result
-        else:
-            raise HTTPException(status_code=500, detail="Failed to delete documents")
-            
-    except Exception as e:
-        logger.error(f"Error deleting old documents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Clear all documents endpoint
-@app.delete("/documents")
-async def clear_all_documents(client: QdrantClientWrapper = Depends(get_qdrant_client)):
-    """Clear all documents from the collection."""
-    try:
-        result = await client.clear_all_documents()
-        
-        if result:
-            return result
-        else:
-            raise HTTPException(status_code=500, detail="Failed to clear documents")
-            
-    except Exception as e:
-        logger.error(f"Error clearing documents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 # Get collection stats endpoint
 @app.get("/documents/stats")
 async def get_collection_stats(client: QdrantClientWrapper = Depends(get_qdrant_client)):
@@ -200,8 +159,6 @@ async def root():
         "endpoints": {
             "health": "/health",
             "search": "/search",
-            "delete_old": "/documents/older-than/{hours}",
-            "clear_all": "/documents",
             "stats": "/documents/stats"
         }
     }

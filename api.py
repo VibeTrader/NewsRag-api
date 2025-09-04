@@ -10,8 +10,14 @@ from dotenv import load_dotenv
 # Import our Qdrant client
 from clients.qdrant_client import QdrantClientWrapper
 
+# Import summarization module
+from utils.summarization import NewsSummarizer
+
 # Load environment variables from .env file
 load_dotenv()
+
+# Initialize summarizer
+summarizer = NewsSummarizer()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -43,6 +49,26 @@ class SearchResponse(BaseModel):
     total_count: int
     query: str
     used_threshold: Optional[float] = None # Added for dynamic threshold
+
+class SummaryRequest(BaseModel):
+    query: str
+    limit: Optional[int] = 20
+    score_threshold: Optional[float] = 0.3
+    use_cache: Optional[bool] = True
+    format: Optional[str] = "json"  # Can be "json" or "text"
+
+class SummaryResponse(BaseModel):
+    summary: str
+    keyPoints: List[str]
+    sentiment: Dict[str, Any]
+    impactLevel: str
+    currencyPairRankings: List[Dict[str, Any]]
+    riskAssessment: Dict[str, str]
+    tradeManagementGuidelines: List[str]
+    marketConditions: Optional[str] = None
+    timestamp: str
+    query: str
+    articleCount: int
 
 class HealthResponse(BaseModel):
     status: str
@@ -144,6 +170,98 @@ async def get_collection_stats(client: QdrantClientWrapper = Depends(get_qdrant_
             
     except Exception as e:
         logger.error(f"Error getting collection stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Add the new summarize endpoint
+@app.post("/summarize", response_model=SummaryResponse)
+async def summarize_news(
+    request: SummaryRequest,
+    client: QdrantClientWrapper = Depends(get_qdrant_client)
+):
+    """Generate a comprehensive summary of news articles related to a query."""
+    try:
+        logger.info(f"Summarizing news for query: '{request.query}', limit: {request.limit}, use_cache: {request.use_cache}")
+        
+        # First, search for articles using the existing search functionality
+        thresholds_to_try = [0.7, 0.6, 0.5, 0.4, 0.3]
+        
+        # If user specified a custom threshold, use it
+        if request.score_threshold is not None:
+            thresholds_to_try = [request.score_threshold]
+        
+        # Try thresholds until we get results
+        search_results = None
+        used_threshold = None
+        
+        try:
+            for threshold in thresholds_to_try:
+                logger.info(f"Trying search with threshold: {threshold}")
+                search_results = await client.search_documents(
+                    query=request.query,
+                    limit=request.limit,
+                    score_threshold=threshold
+                )
+                
+                if search_results and len(search_results) > 0:
+                    used_threshold = threshold
+                    break
+            
+            logger.info(f"Search results: {search_results is not None}, count: {len(search_results) if search_results else 0}")
+            
+            if not search_results or len(search_results) == 0:
+                logger.warning(f"No search results found for query: {request.query}")
+                raise HTTPException(status_code=404, detail="No news articles found for the query")
+            
+            logger.info(f"Found {len(search_results)} articles with threshold {used_threshold}")
+        except Exception as e:
+            logger.error(f"Error during search: {e}")
+            raise HTTPException(status_code=500, detail=f"Error during search: {str(e)}")
+            
+        # Generate summary
+        try:
+            logger.info(f"Generating summary for {len(search_results)} articles")
+            summary_result = await summarizer.generate_summary(
+                articles=search_results,
+                query=request.query,
+                use_cache=request.use_cache
+            )
+            
+            # Add query and article count
+            summary_result["query"] = request.query
+            summary_result["articleCount"] = len(search_results)
+            
+            # Check if text format was requested
+            if request.format and request.format.lower() == "text":
+                # Return formatted text if available
+                if "formatted_text" in summary_result:
+                    from fastapi.responses import PlainTextResponse
+                    formatted_text = summary_result["formatted_text"]
+                    
+                    # No additional formatting needed as the system prompt has been updated
+                    # to match the exact desired format
+                    
+                    return PlainTextResponse(content=formatted_text)
+            
+            return summary_result
+        except Exception as e:
+            logger.error(f"Error during summary generation: {e}")
+            raise HTTPException(status_code=500, detail=f"Error during summary generation: {str(e)}")
+        
+    except HTTPException as he:
+        # Re-raise HTTP exceptions
+        raise he
+    except Exception as e:
+        logger.error(f"Error generating summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Add endpoint for summary cache stats
+@app.get("/summarize/stats")
+async def get_summary_stats():
+    """Get statistics about the summary cache."""
+    try:
+        return summarizer.get_cache_stats()
+    except Exception as e:
+        logger.error(f"Error getting summary stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -38,7 +38,7 @@ class QdrantClientWrapper:
         )
         
         # Embedding model configuration (for search queries only) - Match crawler exactly
-        self.embedding_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "embedding-stocks")
+        self.embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "embedding-stocks")
         self.embedding_dimension = int(os.getenv("EMBEDDING_DIMENSION", "3072"))  # text-embedding-3-large: 3072
         
         logger.info(f"QdrantClient initialized for URL: {self.url}")
@@ -60,9 +60,9 @@ class QdrantClientWrapper:
             
             # Initialize OpenAI client for search queries only - Using user's environment variables
             openai_client = AzureOpenAI(
-                api_key=os.getenv("OPENAI_API_KEY"),  # Changed to match user's config
-                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),  # Match crawler
-                azure_endpoint=os.getenv("OPENAI_BASE_URL")  # Changed to match user's config
+                api_key=os.getenv("OPENAI_API_KEY"),  
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),  
+                azure_endpoint=os.getenv("OPENAI_BASE_URL")  
             )
             
             response = openai_client.embeddings.create(
@@ -83,13 +83,16 @@ class QdrantClientWrapper:
             # Initialize OpenAI client for summary generation
             openai_client = AzureOpenAI(
                 api_key=os.getenv("OPENAI_API_KEY"),
-                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
                 azure_endpoint=os.getenv("OPENAI_BASE_URL")
             )
             
+            # Use the embedding-stocks deployment directly
+            model_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "embedding-stocks")
+            
             # Generate summary using GPT
             response = openai_client.chat.completions.create(
-                model=os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4"),  # Use your GPT deployment
+                model=model_deployment,
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that creates concise summaries of news articles. Focus on the key points and main insights."},
                     {"role": "user", "content": f"Please provide a concise summary of this article:\n\n{text_content[:3000]}"}  # Limit to 3000 chars

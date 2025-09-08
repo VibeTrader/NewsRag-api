@@ -50,19 +50,26 @@ class QdrantClientWrapper:
 
 
 
-    def _get_embedding_for_search(self, text: str) -> List[float]:
+    def _get_embedding_for_search(self, text: str):
         """Generate embedding for search queries using Azure OpenAI.
         This is needed because search queries need to be converted to vectors
         to find similar articles in the database."""
         try:
             # Import here to avoid dependency if not needed
             from openai import AzureOpenAI
+            import httpx
+
+            # Create HTTP client without proxies
+            http_client = httpx.Client(
+                headers={"Accept-Encoding": "gzip, deflate"}
+            )
             
-            # Initialize OpenAI client for search queries only - Using user's environment variables
+            # Initialize OpenAI client for search queries only
             openai_client = AzureOpenAI(
-                api_key=os.getenv("OPENAI_API_KEY"),  
-                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),  
-                azure_endpoint=os.getenv("OPENAI_BASE_URL")  
+                api_key=os.getenv("OPENAI_API_KEY"),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+                azure_endpoint=os.getenv("OPENAI_BASE_URL"),
+                http_client=http_client
             )
             
             response = openai_client.embeddings.create(
@@ -79,12 +86,18 @@ class QdrantClientWrapper:
         """Generate AI summary of the content using Azure OpenAI."""
         try:
             from openai import AzureOpenAI
+            import httpx
             
-            # Initialize OpenAI client for summary generation
+            # Create HTTP client without proxies
+            http_client = httpx.Client(
+                headers={"Accept-Encoding": "gzip, deflate"}
+            )
+            
             openai_client = AzureOpenAI(
                 api_key=os.getenv("OPENAI_API_KEY"),
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-                azure_endpoint=os.getenv("OPENAI_BASE_URL")
+                azure_endpoint=os.getenv("OPENAI_BASE_URL"),
+                http_client=http_client
             )
             
             # Use the embedding-stocks deployment directly

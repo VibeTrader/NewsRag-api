@@ -16,12 +16,19 @@ class NewsSummarizer:
         """Initialize the summarizer with Azure OpenAI client."""
         # Import here to avoid dependency issues
         from openai import AzureOpenAI
+        import httpx
+        
+        # Create HTTP client without proxies
+        http_client = httpx.Client(
+            headers={"Accept-Encoding": "gzip, deflate"}
+        )
         
         # Initialize OpenAI client
         self.openai_client = AzureOpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-            azure_endpoint=os.getenv("OPENAI_BASE_URL")
+            azure_endpoint=os.getenv("OPENAI_BASE_URL"),
+            http_client=http_client
         )
         
         # Configuration

@@ -8,7 +8,6 @@ import hashlib
 
 # Import custom modules
 from utils.summarization.cache_manager import CacheManager
-from utils.summarization.market_analyzer import MarketAnalyzer
 
 class NewsSummarizer:
     """Service for generating comprehensive news summaries across multiple articles."""
@@ -36,9 +35,6 @@ class NewsSummarizer:
             max_size=self.cache_size,
             default_ttl=self.cache_ttl
         )
-        
-        # Initialize market analyzer
-        self.market_analyzer = MarketAnalyzer()
         
         logger.info(f"NewsSummarizer initialized with model: {self.model}")
         logger.info(f"Cache configuration: size={self.cache_size}, ttl={self.cache_ttl}s")
@@ -122,86 +118,12 @@ class NewsSummarizer:
         articles: List[Dict[str, Any]],
         query: str
     ) -> Dict[str, Any]:
-        """Generate enhanced summary with both GPT and market analysis."""
-        # Import regex for parsing
-        import re
-        
+        """Generate summary with GPT."""
         # Generate base summary with GPT
         gpt_result = await self._call_gpt_for_summary(articles, query)
-        logger.debug(f"Generated base summary for query: {query}")
+        logger.debug(f"Generated summary for query: {query}")
         
-        # Get currency strength scores to enhance the analysis
-        strength_scores = self.market_analyzer.analyze_currency_strength(articles)
-        
-        # Generate currency pairs analysis if not present or incomplete
-        if not gpt_result.get("currencyPairRankings") or len(gpt_result.get("currencyPairRankings", [])) < 3:
-            currency_implications = self.market_analyzer.extract_currency_pairs(strength_scores)
-            
-            # Create currency pair rankings in the desired format
-            max_rank = 10
-            pairs_rankings = []
-            
-            for i, pair in enumerate(currency_implications[:6]):  # Limit to top 6
-                # Calculate rank (1-10 scale)
-                rank = max(1, min(10, int(pair["confidence"] * 0.1)))
-                
-                # Create pair ranking entry
-                pairs_rankings.append({
-                    "pair": pair["pair"],
-                    "rank": rank,
-                    "maxRank": max_rank,
-                    "fundamentalOutlook": int(pair["confidence"]),
-                    "sentimentOutlook": int(pair["confidence"] * 0.9),  # Slightly lower for diversity
-                    "rationale": pair["reason"]
-                })
-            
-            # Add to result if not already present
-            if not gpt_result.get("currencyPairRankings"):
-                gpt_result["currencyPairRankings"] = pairs_rankings
-            elif len(gpt_result.get("currencyPairRankings", [])) < 3:
-                # Add missing pairs
-                existing_pairs = [p["pair"] for p in gpt_result["currencyPairRankings"]]
-                for pair in pairs_rankings:
-                    if pair["pair"] not in existing_pairs:
-                        gpt_result["currencyPairRankings"].append(pair)
-                        if len(gpt_result["currencyPairRankings"]) >= 6:
-                            break
-        
-        # Extract sentiment score for market conditions
-        sentiment_score = 50
-        if gpt_result.get("sentiment", {}).get("score"):
-            sentiment_score = gpt_result["sentiment"]["score"]
-        elif gpt_result.get("currencyPairRankings"):
-            # Calculate from currency pairs
-            ranks = [p["rank"] for p in gpt_result["currencyPairRankings"]]
-            if ranks:
-                avg_rank = sum(ranks) / len(ranks)
-                sentiment_score = int(avg_rank * 10)
-        
-        # Create market conditions statement if not already present
-        if not gpt_result.get("marketConditions"):
-            gpt_result["marketConditions"] = self.market_analyzer.create_market_conditions_statement(
-                articles, sentiment_score
-            )
-        
-        # Ensure risk assessment is present
-        if not gpt_result.get("riskAssessment") or not gpt_result["riskAssessment"].get("primaryRisk"):
-            # Generate risk assessment
-            gpt_result["riskAssessment"] = {
-                "primaryRisk": "Unexpected shifts in central bank policy expectations could cause significant volatility.",
-                "correlationRisk": "Global market sentiment could impact multiple currency pairs simultaneously.",
-                "volatilityPotential": "Medium to high, depending on upcoming economic data releases."
-            }
-        
-        # Ensure trade management guidelines are present
-        if not gpt_result.get("tradeManagementGuidelines") or not gpt_result["tradeManagementGuidelines"]:
-            gpt_result["tradeManagementGuidelines"] = [
-                "Monitor upcoming economic data releases for potential market-moving surprises.",
-                "Set appropriate stop-loss orders to manage downside risk.",
-                "Consider scaling into positions rather than taking full-size trades given current volatility."
-            ]
-        
-        # Create a properly formatted response that matches the expected structure
+        # Create a properly formatted response
         formatted_result = {
             "summary": gpt_result.get("summary", ""),
             "keyPoints": gpt_result.get("keyPoints", []),
@@ -242,6 +164,7 @@ class NewsSummarizer:
            - Include "   * Sentiment Outlook: Z%" where Z is 0-100 (three spaces before the asterisk)
            - Include "   * Rationale: [detailed explanation with specific market factors]" (three spaces before the asterisk)
            - Each new currency pair starts on a new line with no extra line between bullet points
+           - MUST include major pairs such as EUR/USD, USD/JPY, GBP/USD, and AUD/USD
         
         3. Include "**Risk Assessment:**" section with:
            - "   * Primary Risk: [description]" (three spaces before the asterisk)
@@ -252,6 +175,10 @@ class NewsSummarizer:
            Use bold formatting for currency pair names mentioned in the guidelines.
 
         Focus on extracting specific details and insights from the articles. Use specific economic data points, price levels, and market trends from the articles.
+
+        Your analysis MUST be comprehensive and include ALL sections mentioned above with specific, detailed information extracted from the articles. 
+        Never use generic statements or fill in missing information with placeholder text.
+        Use only factual information from the provided articles.
 
         DO NOT number any lists or sections in the output. Use only the exact formatting specified above.
         """

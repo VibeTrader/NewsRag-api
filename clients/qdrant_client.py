@@ -202,8 +202,9 @@ class QdrantClientWrapper:
             
             # Generate query embedding using Azure OpenAI for search
             if self.dependency_tracker:
+                # Wrap the synchronous embedding function in asyncio.to_thread
                 query_embedding = await self.dependency_tracker.track_async(
-                    self._get_embedding_for_search(query),
+                    asyncio.to_thread(self._get_embedding_for_search, query),
                     name="generate_embedding",
                     type_name="Azure OpenAI",
                     target=self.embedding_deployment,
@@ -253,8 +254,9 @@ class QdrantClientWrapper:
                 # Generate summary based on preference
                 if use_ai_summary and len(text_content) > 100:
                     if self.dependency_tracker:
+                        # Wrap the synchronous summary function in asyncio.to_thread
                         summary = await self.dependency_tracker.track_async(
-                            self._generate_ai_summary(text_content),
+                            asyncio.to_thread(self._generate_ai_summary, text_content),
                             name="generate_summary",
                             type_name="Azure OpenAI",
                             target=os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4"),

@@ -21,7 +21,7 @@ class DependencyTracker:
         """Track an async function call as a dependency.
         
         Args:
-            func: Async function to call
+            func: Async function to call or awaitable object
             name: Name of the dependency
             type_name: Type of dependency
             target: Target system name
@@ -34,7 +34,12 @@ class DependencyTracker:
         success = True
         
         try:
-            result = await func
+            # Handle both awaitable objects and callable async functions
+            if callable(func):
+                result = await func()
+            else:
+                result = await func
+                
             return result
         except Exception as e:
             success = False

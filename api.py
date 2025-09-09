@@ -1,9 +1,10 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import os
 import asyncio
+import time
 from loguru import logger
 from dotenv import load_dotenv
 
@@ -12,6 +13,10 @@ from clients.qdrant_client import QdrantClientWrapper
 
 # Import summarization module
 from utils.summarization import NewsSummarizer
+
+# Import monitoring module
+from utils.monitoring import AppInsightsMonitor
+from utils.monitoring.dependency_tracker import DependencyTracker
 
 # Load environment variables from .env file
 load_dotenv()
@@ -34,6 +39,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialize Application Insights monitoring
+monitor = AppInsightsMonitor(app)
+
+# Initialize dependency tracker
+dependency_tracker = DependencyTracker(monitor)
 
 
 
@@ -78,7 +89,7 @@ class HealthResponse(BaseModel):
 # Dependency to get Qdrant client
 async def get_qdrant_client():
     """Dependency to get Qdrant client instance."""
-    client = QdrantClientWrapper()
+    client = QdrantClientWrapper(dependency_tracker=dependency_tracker)
     try:
         yield client
     finally:
@@ -89,13 +100,39 @@ async def get_qdrant_client():
 async def health_check(client: QdrantClientWrapper = Depends(get_qdrant_client)):
     """Health check endpoint."""
     try:
-        # Check Qdrant connection
-        qdrant_ok = await client.check_health()
+        # Start timing the request
+        start_time = time.time()
+        
+        # Check Qdrant connection with dependency tracking
+        qdrant_ok = await dependency_tracker.track_async(
+            client.check_health(),
+            name="check_qdrant_health",
+            type_name="Qdrant",
+            target="health_check"
+        )
         
         # Get collection stats if connected
         stats = None
         if qdrant_ok:
-            stats = await client.get_collection_stats()
+            stats = await dependency_tracker.track_async(
+                client.get_collection_stats(),
+                name="get_collection_stats",
+                type_name="Qdrant",
+                target="collection_stats"
+            )
+        
+        # Calculate duration
+        duration = (time.time() - start_time) * 1000
+        
+        # Track metric for health check time
+        monitor.track_metric("health_check_time", duration)
+        
+        # Track event for health status
+        monitor.track_event("health_check", {
+            "qdrant_connected": str(qdrant_ok),
+            "status": "healthy" if qdrant_ok else "unhealthy",
+            "duration_ms": str(int(duration))
+        })
         
         return HealthResponse(
             status="healthy" if qdrant_ok else "unhealthy",
@@ -104,6 +141,13 @@ async def health_check(client: QdrantClientWrapper = Depends(get_qdrant_client))
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
+        
+        # Track the exception
+        monitor.track_exception({
+            "error": str(e),
+            "phase": "health_check"
+        })
+        
         return HealthResponse(
             status="unhealthy",
             qdrant_connected=False,
@@ -120,6 +164,12 @@ async def search_documents(
 ):
     """Search for documents similar to the query with dynamic threshold."""
     try:
+        # Start timing the request
+        start_time = time.time()
+        
+        # Log the search request
+        logger.info(f"Search request received: query='{request.query}', limit={request.limit}")
+        
         # Dynamic threshold: try higher thresholds first, fallback to lower ones
         thresholds_to_try = [0.7, 0.6, 0.5, 0.4, 0.3]
         
@@ -131,18 +181,57 @@ async def search_documents(
         used_threshold = None
         
         for threshold in thresholds_to_try:
-            results = await client.search_documents(
-                query=request.query,
-                limit=request.limit,
-                score_threshold=threshold,
-                use_ai_summary=request.use_ai_summary
+            # Track the search operation with the current threshold
+            search_properties = {
+                "query": request.query,
+                "limit": str(request.limit),
+                "threshold": str(threshold),
+                "use_ai_summary": str(request.use_ai_summary)
+            }
+            
+            # Execute search with dependency tracking
+            results = await dependency_tracker.track_async(
+                client.search_documents(
+                    query=request.query,
+                    limit=request.limit,
+                    score_threshold=threshold,
+                    use_ai_summary=request.use_ai_summary
+                ),
+                name="search_documents",
+                type_name="Qdrant",
+                target="vector_search",
+                properties=search_properties
             )
             
             if results and len(results) > 0:
                 used_threshold = threshold
                 break
         
+        # Calculate duration
+        duration = (time.time() - start_time) * 1000
+        
+        # Track metrics
+        monitor.track_metric("search_latency", duration, {
+            "query": request.query,
+            "threshold_used": str(used_threshold)
+        })
+        
+        if results:
+            monitor.track_metric("search_results_count", len(results), {
+                "query": request.query
+            })
+        
+        # Track the search event
+        monitor.track_event("search_completed", {
+            "query": request.query,
+            "limit": str(request.limit),
+            "results_count": str(len(results) if results else 0),
+            "threshold_used": str(used_threshold),
+            "duration_ms": str(int(duration))
+        })
+        
         if results is not None and len(results) > 0:
+            logger.info(f"Search completed: query='{request.query}', found {len(results)} results with threshold {used_threshold}")
             return SearchResponse(
                 results=results,
                 total_count=len(results),
@@ -150,10 +239,25 @@ async def search_documents(
                 used_threshold=used_threshold  # Add this to show which threshold was used
             )
         else:
+            logger.warning(f"No results found: query='{request.query}' with any threshold")
+            
+            # Track the no results event
+            monitor.track_event("search_no_results", {
+                "query": request.query,
+                "thresholds_tried": str(thresholds_to_try)
+            })
+            
             raise HTTPException(status_code=404, detail="No results found with any threshold")
             
     except Exception as e:
         logger.error(f"Error searching documents: {e}")
+        
+        # Track the exception
+        monitor.track_exception({
+            "query": request.query,
+            "error": str(e)
+        })
+        
         raise HTTPException(status_code=500, detail=str(e))
 
 # Get collection stats endpoint
@@ -180,7 +284,18 @@ async def summarize_news(
 ):
     """Generate a comprehensive summary of news articles related to a query."""
     try:
-        logger.info(f"Summarizing news for query: '{request.query}', limit: {request.limit}, use_cache: {request.use_cache}")
+        # Start timing the request
+        start_time = time.time()
+        
+        logger.info(f"Summarizing news: query='{request.query}', limit={request.limit}, use_cache={request.use_cache}")
+        
+        # Track event for summary request
+        monitor.track_event("summary_request", {
+            "query": request.query,
+            "limit": str(request.limit),
+            "format": request.format,
+            "use_cache": str(request.use_cache)
+        })
         
         # First, search for articles using the existing search functionality
         thresholds_to_try = [0.7, 0.6, 0.5, 0.4, 0.3]
@@ -196,10 +311,26 @@ async def summarize_news(
         try:
             for threshold in thresholds_to_try:
                 logger.info(f"Trying search with threshold: {threshold}")
-                search_results = await client.search_documents(
-                    query=request.query,
-                    limit=request.limit,
-                    score_threshold=threshold
+                
+                # Track the search operation with the current threshold
+                search_properties = {
+                    "query": request.query,
+                    "limit": str(request.limit),
+                    "threshold": str(threshold),
+                    "for_summary": "true"
+                }
+                
+                # Execute search with dependency tracking
+                search_results = await dependency_tracker.track_async(
+                    client.search_documents(
+                        query=request.query,
+                        limit=request.limit,
+                        score_threshold=threshold
+                    ),
+                    name="search_for_summary",
+                    type_name="Qdrant",
+                    target="vector_search",
+                    properties=search_properties
                 )
                 
                 if search_results and len(search_results) > 0:
@@ -210,25 +341,111 @@ async def summarize_news(
             
             if not search_results or len(search_results) == 0:
                 logger.warning(f"No search results found for query: {request.query}")
+                
+                # Track the no results event
+                monitor.track_event("summary_no_results", {
+                    "query": request.query,
+                    "thresholds_tried": str(thresholds_to_try)
+                })
+                
                 raise HTTPException(status_code=404, detail="No news articles found for the query")
             
             logger.info(f"Found {len(search_results)} articles with threshold {used_threshold}")
+            
+            # Track metric for article count
+            monitor.track_metric("summary_article_count", len(search_results), {
+                "query": request.query
+            })
+            
         except Exception as e:
             logger.error(f"Error during search: {e}")
+            
+            # Track the exception
+            monitor.track_exception({
+                "query": request.query,
+                "error": str(e),
+                "phase": "search_for_summary"
+            })
+            
             raise HTTPException(status_code=500, detail=f"Error during search: {str(e)}")
             
         # Generate summary
         try:
             logger.info(f"Generating summary for {len(search_results)} articles")
-            summary_result = await summarizer.generate_summary(
-                articles=search_results,
-                query=request.query,
-                use_cache=request.use_cache
+            
+            # Start timing summary generation
+            summary_start_time = time.time()
+            
+            # Execute summary generation with dependency tracking
+            summary_result = await dependency_tracker.track_async(
+                summarizer.generate_summary(
+                    articles=search_results,
+                    query=request.query,
+                    use_cache=request.use_cache
+                ),
+                name="generate_summary",
+                type_name="Azure OpenAI",
+                target="summary_generation",
+                properties={
+                    "query": request.query,
+                    "article_count": str(len(search_results)),
+                    "use_cache": str(request.use_cache)
+                }
             )
+            
+            # Calculate summary generation duration
+            summary_duration = (time.time() - summary_start_time) * 1000
+            
+            # Track metric for summary generation time
+            monitor.track_metric("summary_generation_time", summary_duration, {
+                "query": request.query,
+                "article_count": str(len(search_results))
+            })
             
             # Add query and article count
             summary_result["query"] = request.query
             summary_result["articleCount"] = len(search_results)
+            
+            # Track sentiment and impact metrics
+            if "sentiment" in summary_result:
+                sentiment = summary_result["sentiment"].get("overall", "neutral")
+                sentiment_score = summary_result["sentiment"].get("score", 50)
+                
+                monitor.track_metric("summary_sentiment_score", sentiment_score, {
+                    "query": request.query,
+                    "sentiment": sentiment
+                })
+            
+            if "impactLevel" in summary_result:
+                monitor.track_event("summary_impact", {
+                    "query": request.query,
+                    "impact_level": summary_result["impactLevel"]
+                })
+            
+            # Track currency pairs mentioned
+            if "currencyPairRankings" in summary_result:
+                currency_pairs = [pair.get("pair", "") for pair in summary_result["currencyPairRankings"]]
+                
+                monitor.track_event("currency_pairs_analyzed", {
+                    "query": request.query,
+                    "pairs": str(currency_pairs)
+                })
+            
+            # Calculate total duration
+            total_duration = (time.time() - start_time) * 1000
+            
+            # Track metric for total processing time
+            monitor.track_metric("summary_total_time", total_duration, {
+                "query": request.query
+            })
+            
+            # Track summary completion event
+            monitor.track_event("summary_completed", {
+                "query": request.query,
+                "article_count": str(len(search_results)),
+                "format": request.format,
+                "duration_ms": str(int(total_duration))
+            })
             
             # Check if text format was requested
             if request.format and request.format.lower() == "text":
@@ -245,6 +462,14 @@ async def summarize_news(
             return summary_result
         except Exception as e:
             logger.error(f"Error during summary generation: {e}")
+            
+            # Track the exception
+            monitor.track_exception({
+                "query": request.query,
+                "error": str(e),
+                "phase": "summary_generation"
+            })
+            
             raise HTTPException(status_code=500, detail=f"Error during summary generation: {str(e)}")
         
     except HTTPException as he:
@@ -252,6 +477,14 @@ async def summarize_news(
         raise he
     except Exception as e:
         logger.error(f"Error generating summary: {e}")
+        
+        # Track the exception
+        monitor.track_exception({
+            "query": request.query,
+            "error": str(e),
+            "phase": "summary_overall"
+        })
+        
         raise HTTPException(status_code=500, detail=str(e))
 
 # Add endpoint for summary cache stats
@@ -286,6 +519,17 @@ if __name__ == "__main__":
     
     # Get port from environment or use default
     port = int(os.getenv("PORT", 8000))
+    
+    # Log application startup
+    logger.info(f"Starting NewsRagnarok API on port {port}")
+    logger.info(f"Monitoring enabled: {monitor.enabled}")
+    
+    # Set application metadata for monitoring
+    monitor.set_custom_properties({
+        "app_version": "1.0.0",
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "host": os.getenv("COMPUTERNAME", "unknown"),
+    })
     
     # Run the application
     uvicorn.run(

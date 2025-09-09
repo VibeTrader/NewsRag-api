@@ -1,5 +1,6 @@
 import os
 import asyncio
+import time
 from typing import Optional, Dict, Any, List
 from loguru import logger
 from dotenv import load_dotenv
@@ -14,16 +15,18 @@ load_dotenv()
 class QdrantClientWrapper:
     """Client for interacting with Qdrant Cloud vector database with Azure OpenAI embeddings."""
 
-    def __init__(self, url: Optional[str] = None, api_key: Optional[str] = None):
+    def __init__(self, url: Optional[str] = None, api_key: Optional[str] = None, dependency_tracker=None):
         """Initializes the Qdrant client with Azure OpenAI embeddings.
 
         Args:
             url: The Qdrant Cloud URL. If None, loads from QDRANT_URL environment variable.
             api_key: The Qdrant API key. If None, loads from QDRANT_API_KEY environment variable.
+            dependency_tracker: Optional dependency tracker for monitoring.
         """
         self.url = url or os.getenv("QDRANT_URL")
         self.api_key = api_key or os.getenv("QDRANT_API_KEY")
         self.collection_name = os.getenv("QDRANT_COLLECTION_NAME", "news_articles")
+        self.dependency_tracker = dependency_tracker
         
         if not self.url:
             raise ValueError("QDRANT_URL environment variable is not configured.")
@@ -195,16 +198,49 @@ class QdrantClientWrapper:
             List of matching documents with scores, or None on failure.
         """
         try:
+            start_time = time.time()
+            
             # Generate query embedding using Azure OpenAI for search
-            query_embedding = self._get_embedding_for_search(query)
+            if self.dependency_tracker:
+                query_embedding = await self.dependency_tracker.track_async(
+                    self._get_embedding_for_search(query),
+                    name="generate_embedding",
+                    type_name="Azure OpenAI",
+                    target=self.embedding_deployment,
+                    properties={"query_length": str(len(query)), "operation": "embedding"}
+                )
+            else:
+                query_embedding = self._get_embedding_for_search(query)
             
             # Search in collection
-            search_results = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_embedding,
-                limit=limit,
-                score_threshold=score_threshold
-            )
+            search_start_time = time.time()
+            
+            # Track Qdrant search operation
+            if self.dependency_tracker:
+                search_results = await self.dependency_tracker.track_async(
+                    asyncio.to_thread(
+                        self.client.search,
+                        collection_name=self.collection_name,
+                        query_vector=query_embedding,
+                        limit=limit,
+                        score_threshold=score_threshold
+                    ),
+                    name="vector_search",
+                    type_name="Qdrant",
+                    target=self.url,
+                    properties={
+                        "collection": self.collection_name,
+                        "limit": str(limit),
+                        "threshold": str(score_threshold)
+                    }
+                )
+            else:
+                search_results = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=limit,
+                    score_threshold=score_threshold
+                )
             
             # Format results to match crawler's data structure
             results = []
@@ -216,7 +252,16 @@ class QdrantClientWrapper:
                 
                 # Generate summary based on preference
                 if use_ai_summary and len(text_content) > 100:
-                    summary = self._generate_ai_summary(text_content)
+                    if self.dependency_tracker:
+                        summary = await self.dependency_tracker.track_async(
+                            self._generate_ai_summary(text_content),
+                            name="generate_summary",
+                            type_name="Azure OpenAI",
+                            target=os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4"),
+                            properties={"content_length": str(len(text_content)), "operation": "summarization"}
+                        )
+                    else:
+                        summary = self._generate_ai_summary(text_content)
                 else:
                     summary = text_content  # Full content as summary
                 
@@ -241,7 +286,13 @@ class QdrantClientWrapper:
                     "payload": formatted_payload
                 })
             
-            logger.info(f"Search returned {len(results)} results for query: {query[:50]}...")
+            # Track metrics for the overall operation
+            total_duration = (time.time() - start_time) * 1000
+            search_duration = (search_start_time - start_time) * 1000
+            results_processing_duration = (time.time() - search_start_time) * 1000
+            
+            logger.info(f"Search returned {len(results)} results for query: {query[:50]}... (duration: {total_duration:.2f}ms)")
+            
             return results
             
         except Exception as e:

@@ -1,0 +1,203 @@
+# NewsRagnarok API Monitoring Queries
+
+This file contains Kusto Query Language (KQL) queries for monitoring the NewsRagnarok API.
+You can use these queries in Azure Monitor/Application Insights to create a dashboard.
+
+## Performance Metrics
+
+### Overall API Response Time
+```kql
+requests
+| where timestamp > ago(24h)
+| summarize avgDuration=avg(duration), p95Duration=percentile(duration, 95), p99Duration=percentile(duration, 99) by name
+| order by avgDuration desc
+```
+
+### API Requests by Endpoint
+```kql
+requests
+| where timestamp > ago(24h)
+| summarize count() by name, bin(timestamp, 1h)
+| render timechart
+```
+
+### Errors by Endpoint
+```kql
+requests
+| where timestamp > ago(24h)
+| where success == false
+| summarize count() by name, resultCode
+| order by count_ desc
+```
+
+## Search Performance
+
+### Search Latency
+```kql
+customMetrics
+| where name == "search_latency"
+| where timestamp > ago(24h)
+| summarize avg(value), percentile(value, 95), percentile(value, 99) by bin(timestamp, 1h)
+| render timechart
+```
+
+### Search Result Counts
+```kql
+customMetrics
+| where name == "search_results_count"
+| where timestamp > ago(24h)
+| summarize avg(value) by bin(timestamp, 1h)
+| render timechart
+```
+
+### Search Thresholds Used
+```kql
+customEvents
+| where name == "search_completed"
+| where timestamp > ago(24h)
+| extend threshold = tostring(customDimensions.threshold_used)
+| summarize count() by threshold
+| render piechart
+```
+
+## Summarization Performance
+
+### Summary Generation Time
+```kql
+customMetrics
+| where name == "summary_generation_time"
+| where timestamp > ago(24h)
+| summarize avg(value), percentile(value, 95), percentile(value, 99) by bin(timestamp, 1h)
+| render timechart
+```
+
+### Summary Article Counts
+```kql
+customMetrics
+| where name == "summary_article_count"
+| where timestamp > ago(24h)
+| summarize avg(value) by bin(timestamp, 1h)
+| render timechart
+```
+
+### Total Summarization Time
+```kql
+customMetrics
+| where name == "summary_total_time"
+| where timestamp > ago(24h)
+| summarize avg(value), percentile(value, 95), percentile(value, 99) by bin(timestamp, 1h)
+| render timechart
+```
+
+## Business Metrics
+
+### Sentiment Analysis
+```kql
+customMetrics
+| where name == "summary_sentiment_score"
+| where timestamp > ago(24h)
+| summarize avg(value) by bin(timestamp, 1h)
+| render timechart
+```
+
+### Impact Level Distribution
+```kql
+customEvents
+| where name == "summary_impact"
+| where timestamp > ago(24h)
+| extend impact = tostring(customDimensions.impact_level)
+| summarize count() by impact
+| render piechart
+```
+
+### Currency Pairs Frequency
+```kql
+customEvents
+| where name == "currency_pairs_analyzed"
+| where timestamp > ago(24h)
+| extend pairs = tostring(customDimensions.pairs)
+| summarize count() by pairs
+| order by count_ desc
+```
+
+## Dependency Performance
+
+### Azure OpenAI API Performance
+```kql
+dependencies
+| where timestamp > ago(24h)
+| where type == "Azure OpenAI"
+| summarize avgDuration=avg(duration), p95Duration=percentile(duration, 95), count=count() by name, target
+| order by avgDuration desc
+```
+
+### Qdrant API Performance
+```kql
+dependencies
+| where timestamp > ago(24h)
+| where type == "Qdrant"
+| summarize avgDuration=avg(duration), p95Duration=percentile(duration, 95), count=count() by name, target
+| order by avgDuration desc
+```
+
+## Error Analysis
+
+### Exceptions by Type
+```kql
+exceptions
+| where timestamp > ago(24h)
+| summarize count() by type, bin(timestamp, 1h)
+| render timechart
+```
+
+### Exception Details
+```kql
+exceptions
+| where timestamp > ago(24h)
+| extend phase = tostring(customDimensions.phase)
+| project timestamp, type, method, message, phase
+| order by timestamp desc
+```
+
+## Usage Patterns
+
+### Queries by Frequency
+```kql
+customEvents
+| where name in ("search_completed", "summary_completed")
+| where timestamp > ago(24h)
+| extend query = tostring(customDimensions.query)
+| summarize count() by query
+| top 20 by count_ desc
+```
+
+### Usage by Hour of Day
+```kql
+requests
+| where timestamp > ago(7d)
+| extend hour = datetime_part("hour", timestamp)
+| summarize count() by hour, name
+| render columnchart
+```
+
+## System Health
+
+### CPU and Memory Usage
+```kql
+// Requires VM insights or custom metrics for CPU/memory
+performanceCounters
+| where timestamp > ago(24h)
+| where categoryName == "Process" and counterName == "% Processor Time"
+| summarize avg(counterValue) by bin(timestamp, 5m)
+| render timechart
+```
+
+### Request Queue Length
+```kql
+// If you have HTTP queue length metrics
+performanceCounters
+| where timestamp > ago(24h)
+| where categoryName == "ASP.NET" and counterName == "Requests In Application Queue"
+| summarize avg(counterValue) by bin(timestamp, 5m)
+| render timechart
+```

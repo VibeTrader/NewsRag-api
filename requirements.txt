@@ -19,7 +19,8 @@ azure-core>=1.29.0
 python-dotenv>=1.0.0
 loguru>=0.7.2
 
-
+# Monitoring and Observability
+applicationinsights>=0.11.10
 
 # Optional: Data processing
 numpy>=1.26.0

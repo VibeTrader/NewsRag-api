@@ -1,0 +1,351 @@
+{
+  "properties": {
+    "lenses": {
+      "0": {
+        "order": 0,
+        "parts": {
+          "0": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "options",
+                  "value": {
+                    "chart": {
+                      "metrics": [
+                        {
+                          "resourceMetadata": {
+                            "id": "{appInsightsResourceId}"
+                          },
+                          "name": "requests/count",
+                          "aggregationType": 1,
+                          "namespace": "microsoft.insights/components",
+                          "metricVisualization": {
+                            "displayName": "Server requests"
+                          }
+                        }
+                      ],
+                      "title": "API Request Volume",
+                      "timeContext": {
+                        "relative": {
+                          "timeAmount": 1,
+                          "timeUnit": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart"
+            }
+          },
+          "1": {
+            "position": {
+              "x": 6,
+              "y": 0,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "options",
+                  "value": {
+                    "chart": {
+                      "metrics": [
+                        {
+                          "resourceMetadata": {
+                            "id": "{appInsightsResourceId}"
+                          },
+                          "name": "requests/duration",
+                          "aggregationType": 4,
+                          "namespace": "microsoft.insights/components",
+                          "metricVisualization": {
+                            "displayName": "Server response time"
+                          }
+                        }
+                      ],
+                      "title": "API Response Time",
+                      "timeContext": {
+                        "relative": {
+                          "timeAmount": 1,
+                          "timeUnit": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart"
+            }
+          },
+          "2": {
+            "position": {
+              "x": 0,
+              "y": 4,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "options",
+                  "value": {
+                    "chart": {
+                      "metrics": [
+                        {
+                          "resourceMetadata": {
+                            "id": "{appInsightsResourceId}"
+                          },
+                          "name": "customMetrics/search_latency",
+                          "aggregationType": 4,
+                          "namespace": "microsoft.insights/components",
+                          "metricVisualization": {
+                            "displayName": "Search Latency"
+                          }
+                        }
+                      ],
+                      "title": "Search Performance",
+                      "timeContext": {
+                        "relative": {
+                          "timeAmount": 1,
+                          "timeUnit": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart"
+            }
+          },
+          "3": {
+            "position": {
+              "x": 6,
+              "y": 4,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "options",
+                  "value": {
+                    "chart": {
+                      "metrics": [
+                        {
+                          "resourceMetadata": {
+                            "id": "{appInsightsResourceId}"
+                          },
+                          "name": "customMetrics/summary_generation_time",
+                          "aggregationType": 4,
+                          "namespace": "microsoft.insights/components",
+                          "metricVisualization": {
+                            "displayName": "Summary Generation Time"
+                          }
+                        }
+                      ],
+                      "title": "Summary Performance",
+                      "timeContext": {
+                        "relative": {
+                          "timeAmount": 1,
+                          "timeUnit": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart"
+            }
+          },
+          "4": {
+            "position": {
+              "x": 0,
+              "y": 8,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "options",
+                  "value": {
+                    "chart": {
+                      "metrics": [
+                        {
+                          "resourceMetadata": {
+                            "id": "{appInsightsResourceId}"
+                          },
+                          "name": "customMetrics/search_results_count",
+                          "aggregationType": 4,
+                          "namespace": "microsoft.insights/components",
+                          "metricVisualization": {
+                            "displayName": "Search Results Count"
+                          }
+                        }
+                      ],
+                      "title": "Search Result Volume",
+                      "timeContext": {
+                        "relative": {
+                          "timeAmount": 1,
+                          "timeUnit": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart"
+            }
+          },
+          "5": {
+            "position": {
+              "x": 6,
+              "y": 8,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "options",
+                  "value": {
+                    "chart": {
+                      "metrics": [
+                        {
+                          "resourceMetadata": {
+                            "id": "{appInsightsResourceId}"
+                          },
+                          "name": "customMetrics/summary_article_count",
+                          "aggregationType": 4,
+                          "namespace": "microsoft.insights/components",
+                          "metricVisualization": {
+                            "displayName": "Summary Article Count"
+                          }
+                        }
+                      ],
+                      "title": "Articles Used in Summaries",
+                      "timeContext": {
+                        "relative": {
+                          "timeAmount": 1,
+                          "timeUnit": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart"
+            }
+          },
+          "6": {
+            "position": {
+              "x": 0,
+              "y": 12,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "options",
+                  "value": {
+                    "chart": {
+                      "metrics": [
+                        {
+                          "resourceMetadata": {
+                            "id": "{appInsightsResourceId}"
+                          },
+                          "name": "requests/failed",
+                          "aggregationType": 7,
+                          "namespace": "microsoft.insights/components",
+                          "metricVisualization": {
+                            "displayName": "Failed requests"
+                          }
+                        }
+                      ],
+                      "title": "Failed Requests",
+                      "timeContext": {
+                        "relative": {
+                          "timeAmount": 1,
+                          "timeUnit": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart"
+            }
+          },
+          "7": {
+            "position": {
+              "x": 6,
+              "y": 12,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "options",
+                  "value": {
+                    "chart": {
+                      "metrics": [
+                        {
+                          "resourceMetadata": {
+                            "id": "{appInsightsResourceId}"
+                          },
+                          "name": "dependencies/duration",
+                          "aggregationType": 4,
+                          "namespace": "microsoft.insights/components",
+                          "metricVisualization": {
+                            "displayName": "Dependency duration"
+                          }
+                        }
+                      ],
+                      "title": "External Dependencies Performance",
+                      "timeContext": {
+                        "relative": {
+                          "timeAmount": 1,
+                          "timeUnit": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart"
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "model": {
+        "timeRange": {
+          "value": {
+            "relative": {
+              "duration": 24,
+              "timeUnit": 1
+            }
+          },
+          "type": "MsPortalFx.Composition.Configuration.ValueTypes.TimeRange"
+        }
+      }
+    }
+  },
+  "name": "NewsRagnarok API Dashboard",
+  "type": "Microsoft.Portal/dashboards",
+  "location": "INSERT LOCATION",
+  "tags": {
+    "hidden-title": "NewsRagnarok API Dashboard"
+  },
+  "apiVersion": "2015-08-01-preview"
+}

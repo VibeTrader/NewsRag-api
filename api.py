@@ -80,6 +80,7 @@ class SummaryResponse(BaseModel):
     timestamp: str
     query: str
     articleCount: int
+    formatted_text: Optional[str] = None
 
 class HealthResponse(BaseModel):
     status: str
@@ -277,7 +278,7 @@ async def get_collection_stats(client: QdrantClientWrapper = Depends(get_qdrant_
         raise HTTPException(status_code=500, detail=str(e))
 
 # Add the new summarize endpoint
-@app.post("/summarize", response_model=SummaryResponse)
+@app.post("/summarize")
 async def summarize_news(
     request: SummaryRequest,
     client: QdrantClientWrapper = Depends(get_qdrant_client)
@@ -320,17 +321,11 @@ async def summarize_news(
                     "for_summary": "true"
                 }
                 
-                # Execute search with dependency tracking
-                search_results = await dependency_tracker.track_async(
-                    client.search_documents(
-                        query=request.query,
-                        limit=request.limit,
-                        score_threshold=threshold
-                    ),
-                    name="search_for_summary",
-                    type_name="Qdrant",
-                    target="vector_search",
-                    properties=search_properties
+                # Execute search directly
+                search_results = await client.search_documents(
+                    query=request.query,
+                    limit=request.limit,
+                    score_threshold=threshold
                 )
                 
                 if search_results and len(search_results) > 0:
@@ -376,22 +371,16 @@ async def summarize_news(
             # Start timing summary generation
             summary_start_time = time.time()
             
-            # Execute summary generation with dependency tracking
-            summary_result = await dependency_tracker.track_async(
-                summarizer.generate_summary(
-                    articles=search_results,
-                    query=request.query,
-                    use_cache=request.use_cache
-                ),
-                name="generate_summary",
-                type_name="Azure OpenAI",
-                target="summary_generation",
-                properties={
-                    "query": request.query,
-                    "article_count": str(len(search_results)),
-                    "use_cache": str(request.use_cache)
-                }
+            # Generate summary directly without dependency tracking
+            summary_result = await summarizer.generate_summary(
+                articles=search_results,
+                query=request.query,
+                use_cache=request.use_cache
             )
+            
+            # Add query and article count
+            summary_result["query"] = request.query
+            summary_result["articleCount"] = len(search_results)
             
             # Calculate summary generation duration
             summary_duration = (time.time() - summary_start_time) * 1000
@@ -401,10 +390,6 @@ async def summarize_news(
                 "query": request.query,
                 "article_count": str(len(search_results))
             })
-            
-            # Add query and article count
-            summary_result["query"] = request.query
-            summary_result["articleCount"] = len(search_results)
             
             # Track sentiment and impact metrics
             if "sentiment" in summary_result:

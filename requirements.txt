@@ -15,6 +15,11 @@ qdrant-client>=1.9.0
 openai>=1.0.0
 azure-core>=1.29.0
 
+# LangChain for advanced summarization
+langchain>=0.0.312
+langchain-openai>=0.0.1
+langchain-community>=0.0.10
+
 # Utilities
 python-dotenv>=1.0.0
 loguru>=0.7.2

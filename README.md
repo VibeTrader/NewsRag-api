@@ -145,6 +145,8 @@ The summarization process is a multi-step workflow:
 
 ## 📝 Recent Updates
 
+  * **Enhanced Forex Summarization**: Implemented LangChain-based summarization for improved currency pair detection and analysis, resulting in more accurate and detailed market insights.
+  * **Improved Currency Pair Ranking**: The system now analyzes currency pair mentions across articles, prioritizing pairs by frequency, sentiment strength, and recency of news.
   * **Improved Reliability**: Eliminated fallback methods to ensure consistent, high-quality analysis using only the primary AI model.
   * **Enhanced Azure OpenAI Integration**: Updated the Azure OpenAI client for improved compatibility and performance with the latest libraries.
   * **Streamlined Codebase**: Simplified the architecture by removing unused utilities and redundant code, making the application leaner and easier to maintain.

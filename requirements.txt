@@ -20,6 +20,10 @@ langchain>=0.0.312
 langchain-openai>=0.0.1
 langchain-community>=0.0.10
 
+# LLM Monitoring and Observability
+langfuse>=2.6.1
+langfuse-langchain>=0.2.4
+
 # Utilities
 python-dotenv>=1.0.0
 loguru>=0.7.2
@@ -33,3 +37,4 @@ pytz>=2023.3
 
 # Optional: Health monitoring
 psutil>=5.9.6
+langfuse

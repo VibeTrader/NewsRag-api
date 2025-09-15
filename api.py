@@ -5,6 +5,7 @@ from typing import Optional, List, Dict, Any
 import os
 import asyncio
 import time
+import traceback
 from loguru import logger
 from dotenv import load_dotenv
 
@@ -14,9 +15,12 @@ from clients.qdrant_client import QdrantClientWrapper
 # Import summarization module
 from utils.summarization import NewsSummarizer
 
-# Import monitoring module
+# Import monitoring modules
 from utils.monitoring import AppInsightsMonitor
 from utils.monitoring.dependency_tracker import DependencyTracker
+from utils.monitoring import LangfuseMonitor
+from utils.monitoring.langfuse import StatefulTraceClient
+from utils.monitoring import LangChainMonitoring
 
 # Load environment variables from .env file
 load_dotenv()
@@ -45,6 +49,12 @@ monitor = AppInsightsMonitor(app)
 
 # Initialize dependency tracker
 dependency_tracker = DependencyTracker(monitor)
+
+# Initialize Langfuse monitoring
+langfuse_monitor = LangfuseMonitor(app)
+
+# Initialize LangChain monitoring
+langchain_monitor = LangChainMonitoring(langfuse_monitor)
 
 
 
@@ -385,7 +395,70 @@ async def summarize_news(
             # Calculate summary generation duration
             summary_duration = (time.time() - summary_start_time) * 1000
             
-            # Track metric for summary generation time
+            # Create a Langfuse trace if not already created
+            trace = langfuse_monitor.create_trace(
+                name=f"summarize:{request.query}",
+                metadata={
+                    "query": request.query,
+                    "article_count": len(search_results),
+                    "threshold_used": used_threshold,
+                    "format": request.format,
+                    "duration_ms": summary_duration,
+                    "use_cache": request.use_cache
+                },
+                tags=["summarize", "forex"],
+                input=request.query,  # Explicitly set input at trace level
+                output=summary_result.get("formatted_text", summary_result.get("summary", ""))  # Explicitly set output at trace level
+            )
+            
+            # Track comprehensive Langfuse metrics
+            if trace:
+                try:
+                    # Estimate token usage
+                    prompt_tokens = 0
+                    completion_tokens = 0
+                    
+                    # Estimate tokens for articles
+                    for article in search_results:
+                        content = article.get("payload", {}).get("content", "")
+                        prompt_tokens += langfuse_monitor.count_tokens(content)
+                    
+                    # Estimate tokens for summary
+                    if "formatted_text" in summary_result:
+                        completion_tokens = langfuse_monitor.count_tokens(summary_result["formatted_text"])
+                    
+                    # Extract proper summary content for output
+                    summary_output = ""
+                    if "formatted_text" in summary_result:
+                        summary_output = summary_result["formatted_text"]
+                    elif "summary" in summary_result:
+                        summary_output = summary_result["summary"]
+                    
+                    # Track comprehensive Langfuse metrics
+                    currency_pairs = [pair.get("pair", "") for pair in summary_result.get("currencyPairRankings", [])]
+                    langfuse_monitor.track_span(
+                        trace=trace,
+                        name="summarization_metrics",
+                        metadata={
+                            "processing_time_ms": int(summary_duration),
+                            "token_usage": {
+                                "prompt_tokens": prompt_tokens,
+                                "completion_tokens": completion_tokens,
+                                "total_tokens": prompt_tokens + completion_tokens
+                            },
+                            "cache_hit": request.use_cache,
+                            "article_count": len(search_results),
+                            "currency_pairs": currency_pairs,
+                            "sentiment_score": summary_result.get("sentiment", {}).get("score", 0),
+                            "impact_level": summary_result.get("impactLevel", "UNKNOWN")
+                        },
+                        input=request.query,  # Pass input as separate parameter
+                        output=summary_output  # Pass output as separate parameter
+                    )
+                except Exception as e:
+                    logger.warning(f"Error tracking Langfuse metrics: {e}")
+            
+            # Track standard metrics
             monitor.track_metric("summary_generation_time", summary_duration, {
                 "query": request.query,
                 "article_count": str(len(search_results))
@@ -444,11 +517,45 @@ async def summarize_news(
                     
                     return PlainTextResponse(content=formatted_text)
             
+            # Add explicit flush for Langfuse
+            try:
+                if langfuse_monitor and langfuse_monitor.enabled:
+                    logger.info("Explicitly flushing Langfuse data")
+                    langfuse_monitor.flush()
+            except Exception as e:
+                logger.warning(f"Error flushing Langfuse data: {e}")
+            
             return summary_result
         except Exception as e:
             logger.error(f"Error during summary generation: {e}")
             
-            # Track the exception
+            # Track error in Langfuse
+            trace = langfuse_monitor.create_trace(
+                name=f"summarize_error:{request.query}",
+                metadata={
+                    "query": request.query,
+                    "error": str(e),
+                    "error_type": str(type(e)),
+                    "phase": "summary_generation"
+                },
+                tags=["summarize", "error"]
+            )
+            
+            if trace:
+                langfuse_monitor.track_span(
+                    trace=trace,
+                    name="error",
+                    metadata={
+                        "error": str(e),
+                        "error_type": str(type(e)),
+                        "traceback": str(traceback.format_exc())
+                    },
+                    status="error",
+                    input=request.query,
+                    output=f"Error: {str(e)}"
+                )
+            
+            # Track exception in AppInsights
             monitor.track_exception({
                 "query": request.query,
                 "error": str(e),
@@ -495,8 +602,39 @@ async def root():
         "endpoints": {
             "health": "/health",
             "search": "/search",
-            "stats": "/documents/stats"
+            "stats": "/documents/stats",
+            "summarize": "/summarize",
+            "monitoring": "/monitoring"
         }
+    }
+
+# Add monitoring dashboard endpoint
+@app.get("/monitoring")
+async def monitoring_dashboard():
+    """Monitoring dashboard with links to observability tools."""
+    # Get App Insights stats
+    app_insights_enabled = monitor.enabled
+    app_insights_url = None
+    if app_insights_enabled:
+        app_insights_url = f"https://portal.azure.com/#blade/AppInsightsExtension/UsageUsageBlade/ComponentId/{monitor.instrumentation_key}"
+    
+    # Get Langfuse stats
+    langfuse_enabled = langfuse_monitor.enabled
+    langfuse_url = None
+    if langfuse_enabled:
+        langfuse_url = f"{langfuse_monitor.langfuse_host}/project/{langfuse_monitor.project_name}"
+    
+    return {
+        "app_insights": {
+            "enabled": app_insights_enabled,
+            "dashboard_url": app_insights_url
+        },
+        "langfuse": {
+            "enabled": langfuse_enabled,
+            "dashboard_url": langfuse_url,
+            "project": langfuse_monitor.project_name if langfuse_enabled else None
+        },
+        "monitoring_status": "healthy" if (app_insights_enabled or langfuse_enabled) else "limited"
     }
 
 if __name__ == "__main__":
@@ -523,3 +661,57 @@ if __name__ == "__main__":
         port=port,
         log_level="info"
     )
+
+@app.get("/test-langfuse")
+async def test_langfuse_connection():
+    """Test the Langfuse connection."""
+    try:
+        # Log a test event
+        event_id = langfuse_monitor.log_event(
+            name="api_test_connection",
+            metadata={"source": "api_test_endpoint", "timestamp": time.time()}
+        )
+        
+        # Create a test trace
+        trace_id = langfuse_monitor.create_trace(
+            name="api_test_trace",
+            metadata={"source": "api_test_endpoint", "timestamp": time.time()},
+            tags=["test", "api"]
+        )
+        
+        # Add a span to the trace
+        langfuse_monitor.track_span(
+            trace=trace_id,
+            name="connection_test",
+            metadata={"status": "success"}
+        )
+        
+        # Log a test LLM generation
+        generation_id = langfuse_monitor.log_llm_generation(
+            model="test-model",
+            prompt="Test prompt",
+            completion="Test completion",
+            token_count={
+                "prompt_tokens": 2,
+                "completion_tokens": 2,
+                "total_tokens": 4
+            }
+        )
+        
+        # Flush data to Langfuse
+        langfuse_monitor.flush()
+        
+        # Return success
+        return {
+            "status": "success", 
+            "message": "Langfuse connection test successful",
+            "details": {
+                "event_id": event_id,
+                "trace_id": trace_id,
+                "generation_id": generation_id,
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error testing Langfuse connection: {e}")
+        return {"status": "error", "message": f"Langfuse connection test failed: {str(e)}"}

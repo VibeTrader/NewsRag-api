@@ -16,9 +16,14 @@ from utils.summarization.langchain.forex_summarizer import LangChainForexSummari
 # Try to import monitoring
 try:
     from utils.monitoring import AppInsightsMonitor
-    monitor = AppInsightsMonitor.get_instance()
-    has_monitoring = True
+    try:
+        monitor = AppInsightsMonitor.get_instance()
+        has_monitoring = True
+    except Exception as e:
+        logger.warning(f"Failed to get AppInsightsMonitor instance: {e}")
+        has_monitoring = False
 except ImportError:
+    logger.warning("AppInsightsMonitor not available")
     has_monitoring = False
 
 class EnhancedForexSummarizer(LangChainForexSummarizer):

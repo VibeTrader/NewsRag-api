@@ -15,6 +15,21 @@ from applicationinsights.logging import LoggingHandler
 class AppInsightsMonitor:
     """Azure Application Insights integration for monitoring."""
     
+    # Singleton instance
+    _instance = None
+    
+    @classmethod
+    def get_instance(cls):
+        """Get the singleton instance of AppInsightsMonitor.
+        
+        Returns:
+            AppInsightsMonitor: The singleton instance
+        """
+        if cls._instance is None:
+            logger.warning("AppInsightsMonitor singleton not initialized. Creating dummy instance.")
+            cls._instance = cls(None)
+        return cls._instance
+    
     def __init__(self, app: FastAPI, instrumentation_key: Optional[str] = None):
         """Initialize the Application Insights monitor.
         
@@ -23,6 +38,10 @@ class AppInsightsMonitor:
             instrumentation_key: Optional instrumentation key. If not provided, 
                                  will try to load from APPINSIGHTS_INSTRUMENTATIONKEY environment variable.
         """
+        # Set singleton instance
+        if app is not None:
+            AppInsightsMonitor._instance = self
+            
         self.app = app
         
         # Get instrumentation key

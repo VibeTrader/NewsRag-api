@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 def patch_opentelemetry():
     """Apply OpenTelemetry patch for Azure App Service."""
     try:
+        # Import sys here to make sure it's available in this function scope
+        import sys
+        
         logger.info("Applying OpenTelemetry patch for Azure App Service...")
         
         # Check if we're running in Azure App Service
@@ -74,12 +77,14 @@ def patch_opentelemetry():
             raise
             
     except Exception as e:
+        # Make sure we have sys available for traceback logging
+        import sys
+        
         logger.warning(f"Patching failed, disabling OpenTelemetry completely: {e}")
         logger.warning(f"Traceback: {sys.exc_info()[2]}")
         
         # Create mock modules to avoid import errors
         try:
-            import sys
             from types import ModuleType
             
             # Create mock modules
@@ -151,6 +156,7 @@ def patch_opentelemetry():
 def create_mock_langfuse():
     """Create a mock Langfuse module to avoid import errors."""
     try:
+        # Import required modules here to ensure they're available
         import sys
         from types import ModuleType
         

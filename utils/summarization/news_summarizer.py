@@ -3,8 +3,8 @@ from typing import List, Dict, Any
 from loguru import logger
 from datetime import datetime
 
-# Import custom modules - Use the version with enhanced monitoring
-from utils.summarization.langchain.enhanced_forex_summarizer_with_monitoring import EnhancedForexSummarizer
+# Import custom modules - Use the enhanced forex summarizer
+from utils.summarization.langchain.enhanced_forex_summarizer import EnhancedForexSummarizer
 
 class NewsSummarizer:
     """Service for generating comprehensive news summaries across multiple articles."""

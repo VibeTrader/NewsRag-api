@@ -24,6 +24,7 @@ from utils.monitoring.dependency_tracker import DependencyTracker
 from utils.monitoring import LangfuseMonitor
 from utils.monitoring.langfuse import StatefulTraceClient
 from utils.monitoring import LangChainMonitoring
+from utils.summarization.news_summarizer import NewsSummarizer
 
 # Load environment variables from .env file
 load_dotenv()
@@ -37,6 +38,11 @@ app = FastAPI(
     description="FastAPI service for news article search using Qdrant vector database",
     version="1.0.0"
 )
+
+# Replace the general summarizer with the enhanced financial summarizer
+logger.info("enhanced financial summarizer")
+summarizer = NewsSummarizer()
+logger.info("Enhanced financial summarizer integration complete")
 
 # Add CORS middleware
 app.add_middleware(
@@ -53,11 +59,19 @@ monitor = AppInsightsMonitor(app)
 # Initialize dependency tracker
 dependency_tracker = DependencyTracker(monitor)
 
-# Initialize Langfuse monitoring
-langfuse_monitor = LangfuseMonitor(app)
-
-# Initialize LangChain monitoring
-langchain_monitor = LangChainMonitoring(langfuse_monitor)
+# Initialize monitoring
+try:
+    # Initialize Langfuse monitoring
+    from utils.monitoring.langfuse import SimpleLangfuseMonitor
+    langfuse_monitor = SimpleLangfuseMonitor(app)
+    
+    # Initialize LangChain monitoring if available
+    from utils.monitoring import LangChainMonitoring
+    langchain_monitor = LangChainMonitoring()
+except ImportError as e:
+    logger.warning(f"Monitoring initialization error: {e}")
+    langfuse_monitor = None
+    langchain_monitor = None
 
 
 
@@ -556,7 +570,6 @@ async def summarize_news(
                     status="error",
                     input=request.query,
                     output=f"Error: {str(e)}"
-                )=f"Error: {str(e)}"
                 )
             
             # Track exception in AppInsights

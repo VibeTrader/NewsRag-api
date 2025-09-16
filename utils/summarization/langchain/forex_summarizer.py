@@ -8,10 +8,32 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from loguru import logger
 
-# Import LangChain components
-from langchain_openai import AzureChatOpenAI
-from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-from langchain.chains import LLMChain
+# Import LangChain components with fallbacks
+try:
+    # Try modern imports first
+    from langchain_openai import AzureChatOpenAI
+    from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+    from langchain.chains import LLMChain
+    logger.info("Using modern LangChain imports")
+except ImportError:
+    try:
+        # Fall back to legacy imports
+        from langchain.chat_models import AzureChatOpenAI
+        from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+        from langchain.chains import LLMChain
+        logger.info("Using legacy LangChain imports")
+    except ImportError:
+        logger.error("Failed to import LangChain components - functionality will be limited")
+        # Create placeholder classes
+        class AzureChatOpenAI:
+            def __init__(self, *args, **kwargs):
+                pass
+        class LLMChain:
+            def __init__(self, *args, **kwargs):
+                pass
+            async def ainvoke(self, *args, **kwargs):
+                return {"text": "LangChain import error: Unable to generate summary"}
+
 
 # Import monitoring
 try:

@@ -556,6 +556,7 @@ async def summarize_news(
                     status="error",
                     input=request.query,
                     output=f"Error: {str(e)}"
+                )=f"Error: {str(e)}"
                 )
             
             # Track exception in AppInsights
@@ -640,6 +641,49 @@ async def monitoring_dashboard():
         "monitoring_status": "healthy" if (app_insights_enabled or langfuse_enabled) else "limited"
     }
 
+# Add performance metrics endpoint
+@app.get("/performance")
+async def performance_metrics():
+    """Get performance metrics for the API."""
+    try:
+        # Get cache stats
+        cache_stats = summarizer.get_cache_stats()
+        
+        # Get Langfuse status
+        langfuse_status = {
+            "enabled": langfuse_monitor.enabled,
+            "host": langfuse_monitor.langfuse_host if hasattr(langfuse_monitor, "langfuse_host") else None,
+            "has_client": hasattr(langfuse_monitor, "langfuse") and langfuse_monitor.langfuse is not None,
+            "project": langfuse_monitor.project_name if hasattr(langfuse_monitor, "project_name") else None
+        }
+        
+        # Get current configuration
+        api_config = {
+            "max_summary_articles": int(os.getenv("MAX_SUMMARY_ARTICLES", "15")),
+            "max_article_content_chars": int(os.getenv("MAX_ARTICLE_CONTENT_CHARS", "1500")),
+            "llm_timeout": int(os.getenv("LLM_TIMEOUT", "120")),
+            "temperature": float(os.getenv("TEMPERATURE", "0.7")),
+            "max_tokens": int(os.getenv("MAX_TOKENS", "4000")),
+            "model": os.getenv("AZURE_OPENAI_DEPLOYMENT", "Unknown")
+        }
+        
+        # Return combined metrics
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "cache": cache_stats,
+            "langfuse": langfuse_status,
+            "config": api_config,
+            "environment": os.getenv("ENVIRONMENT", "development")
+        }
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 if __name__ == "__main__":
     import uvicorn
     
@@ -669,24 +713,38 @@ if __name__ == "__main__":
 async def test_langfuse_connection():
     """Test the Langfuse connection."""
     try:
+        # Get Langfuse config details
+        langfuse_config = {
+            "host": langfuse_monitor.langfuse_host if hasattr(langfuse_monitor, "langfuse_host") else os.getenv("LANGFUSE_HOST"),
+            "public_key": os.getenv("LANGFUSE_PUBLIC_KEY", "")[:5] + "..." if os.getenv("LANGFUSE_PUBLIC_KEY") else None,
+            "secret_key": os.getenv("LANGFUSE_SECRET_KEY", "")[:5] + "..." if os.getenv("LANGFUSE_SECRET_KEY") else None,
+            "enabled": langfuse_monitor.enabled,
+            "client_initialized": hasattr(langfuse_monitor, "langfuse") and langfuse_monitor.langfuse is not None,
+            "project": langfuse_monitor.project_name if hasattr(langfuse_monitor, "project_name") else os.getenv("PROJECT_NAME", "newsragnarok")
+        }
+        
         # Log a test event
         event_id = langfuse_monitor.log_event(
             name="api_test_connection",
             metadata={"source": "api_test_endpoint", "timestamp": time.time()}
         )
         
-        # Create a test trace
+        # Create a test trace with explicit input/output fields
         trace_id = langfuse_monitor.create_trace(
             name="api_test_trace",
             metadata={"source": "api_test_endpoint", "timestamp": time.time()},
-            tags=["test", "api"]
+            tags=["test", "api"],
+            input="Test input data",  # Add explicit input
+            output="Test output data"  # Add explicit output
         )
         
-        # Add a span to the trace
-        langfuse_monitor.track_span(
+        # Add a span to the trace with explicit input/output
+        span_id = langfuse_monitor.track_span(
             trace=trace_id,
             name="connection_test",
-            metadata={"status": "success"}
+            metadata={"status": "success"},
+            input="Test span input",  # Add explicit input
+            output="Test span output"  # Add explicit output
         )
         
         # Log a test LLM generation
@@ -701,20 +759,32 @@ async def test_langfuse_connection():
             }
         )
         
-        # Flush data to Langfuse
-        langfuse_monitor.flush()
+        # Force flush data to Langfuse
+        try:
+            logger.info("Explicitly flushing Langfuse data")
+            langfuse_monitor.flush()
+        except Exception as flush_error:
+            logger.error(f"Error flushing Langfuse data: {flush_error}")
         
-        # Return success
+        # Return detailed status
         return {
             "status": "success", 
-            "message": "Langfuse connection test successful",
+            "message": "Langfuse connection test completed",
+            "config": langfuse_config,
             "details": {
                 "event_id": event_id,
                 "trace_id": trace_id,
+                "span_id": span_id,
                 "generation_id": generation_id,
                 "timestamp": datetime.now().isoformat()
             }
         }
     except Exception as e:
         logger.error(f"Error testing Langfuse connection: {e}")
-        return {"status": "error", "message": f"Langfuse connection test failed: {str(e)}"}
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {
+            "status": "error", 
+            "message": f"Langfuse connection test failed: {str(e)}",
+            "error_type": str(type(e)),
+            "traceback": traceback.format_exc()
+        }

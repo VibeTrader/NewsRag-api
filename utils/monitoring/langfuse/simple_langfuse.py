@@ -334,7 +334,7 @@ class SimpleLangfuseMonitor:
     def count_tokens(self, text):
         """Estimate token count for a text string.
         
-        Very rough estimation - 1 token ≈ 4 characters for English text.
+        Uses tiktoken for accurate counting if available, falls back to character estimation.
         
         Args:
             text: Text to count tokens for
@@ -345,8 +345,24 @@ class SimpleLangfuseMonitor:
         if not text:
             return 0
             
-        # Very simple estimation
-        return len(text) // 4
+        # Try to use tiktoken for accurate counting
+        try:
+            import tiktoken
+            # Use cl100k_base for Claude-compatible encoding
+            encoding = tiktoken.get_encoding("cl100k_base")
+            tokens = encoding.encode(text)
+            token_count = len(tokens)
+            logger.debug(f"Counted {token_count} tokens using tiktoken")
+            return token_count
+        except Exception as e:
+            logger.debug(f"Tiktoken unavailable, using character estimation: {e}")
+            
+            # Very simple estimation based on whitespace
+            words = text.split()
+            # Token count is typically 30% more than word count for English text
+            estimated_tokens = int(len(words) * 1.3)
+            logger.debug(f"Estimated {estimated_tokens} tokens from {len(words)} words")
+            return max(1, estimated_tokens)
             
     def flush(self):
         """Flush any pending observations to Langfuse."""

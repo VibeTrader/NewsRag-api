@@ -33,10 +33,14 @@ pytz>=2023.3
 # Optional: Health monitoring
 psutil>=5.9.6
 
-# Update your requirements.txt with these specific versions
+# Token counting
+tiktoken>=0.6.0
 
-langfuse==3.3.4
+# OpenTelemetry for monitoring
 opentelemetry-api>=1.33.1,<2.0.0
 opentelemetry-sdk>=1.33.1,<2.0.0
 opentelemetry-exporter-otlp>=1.33.1,<2.0.0
 opentelemetry-instrumentation>=0.42b0
+
+# Ensure specific versions for Langfuse integration
+langfuse==3.3.4

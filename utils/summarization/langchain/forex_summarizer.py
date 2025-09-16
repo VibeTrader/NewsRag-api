@@ -80,14 +80,27 @@ class LangChainForexSummarizer:
     
     def __init__(self):
         """Initialize the LangChain-based forex summarizer with Azure OpenAI client."""
-        # Initialize the LLM
-        self.llm = AzureChatOpenAI(
-            deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-            api_key=os.getenv("OPENAI_API_KEY"),
-            azure_endpoint=os.getenv("OPENAI_BASE_URL"),
-            temperature=0.7,
-        )
+        # Configuration for LLM
+        max_tokens = int(os.getenv("MAX_TOKENS", "4000"))
+        temperature = float(os.getenv("TEMPERATURE", "0.7"))  # Keep high temperature as requested
+        request_timeout = int(os.getenv("LLM_TIMEOUT", "120"))  # Add timeout
+        
+        # Initialize the LLM with proper error handling
+        try:
+            self.llm = AzureChatOpenAI(
+                deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+                api_key=os.getenv("OPENAI_API_KEY"),
+                azure_endpoint=os.getenv("OPENAI_BASE_URL"),
+                temperature=temperature,
+                max_tokens=max_tokens,
+                request_timeout=request_timeout,  # Add explicit timeout
+            )
+            logger.info(f"LLM initialized with deployment: {os.getenv('AZURE_OPENAI_DEPLOYMENT')}, "
+                       f"temperature: {temperature}, max_tokens: {max_tokens}, timeout: {request_timeout}s")
+        except Exception as e:
+            logger.error(f"Error initializing Azure OpenAI LLM: {e}")
+            raise RuntimeError(f"Failed to initialize LLM: {e}")
         
         # Create chat prompt template
         system_message_prompt = SystemMessagePromptTemplate.from_template(SYSTEM_TEMPLATE)
@@ -99,10 +112,13 @@ class LangChainForexSummarizer:
         
         # Add Langfuse monitoring if available
         if langchain_monitoring and langchain_monitoring.enabled:
-            self.chain = langchain_monitoring.wrap_chain(self.chain, "forex_summary_chain")
-            logger.info("Langfuse monitoring enabled for LangChain forex summarizer")
+            try:
+                self.chain = langchain_monitoring.wrap_chain(self.chain, "forex_summary_chain")
+                logger.info("Langfuse monitoring enabled for LangChain forex summarizer")
+            except Exception as e:
+                logger.warning(f"Failed to set up Langfuse monitoring: {e}")
         
-        # Configuration
+        # Configuration for cache
         self.cache_size = int(os.getenv("SUMMARY_CACHE_SIZE", "100"))
         self.cache_ttl = int(os.getenv("SUMMARY_CACHE_TTL", "1800"))  # 30 minutes
         
@@ -130,18 +146,40 @@ class LangChainForexSummarizer:
                 key=lambda x: x.get("payload", {}).get("publishDatePst", "0"), 
                 reverse=True
             )
-        except:
+        except Exception as e:
+            logger.warning(f"Error sorting articles by date: {e}")
             sorted_articles = articles
         
+        # Batch processing: limit the number of articles to improve performance
+        # Use max_articles to control batch size
+        max_articles = int(os.getenv("MAX_SUMMARY_ARTICLES", "15"))
+        if len(sorted_articles) > max_articles:
+            logger.info(f"Limiting articles for summary from {len(sorted_articles)} to {max_articles}")
+            selected_articles = sorted_articles[:max_articles]
+        else:
+            selected_articles = sorted_articles
+        
+        # Limit content size per article to avoid token limits
+        max_content_chars = int(os.getenv("MAX_ARTICLE_CONTENT_CHARS", "1500"))
+        
+        # Calculate optimal content size based on article count
+        # If we have many articles, reduce content size further
+        dynamic_content_size = max(800, int(max_content_chars * (10 / len(selected_articles))))
+        
+        logger.info(f"Using dynamic content size of {dynamic_content_size} chars for {len(selected_articles)} articles")
+        
         articles_text = ""
-        for idx, article in enumerate(sorted_articles, 1):
+        for idx, article in enumerate(selected_articles, 1):
             payload = article.get("payload", {})
             publish_date = payload.get("publishDatePst", "Unknown date")
             
             articles_text += f"ARTICLE {idx} [Date: {publish_date}]:\n"
             articles_text += f"Title: {payload.get('title', 'Untitled')}\n"
             articles_text += f"Source: {payload.get('source', 'Unknown')}\n"
-            articles_text += f"Content: {payload.get('content', '')[:2000]}...\n\n"
+            
+            # Use dynamic content size
+            content = payload.get('content', '')
+            articles_text += f"Content: {content[:dynamic_content_size]}...\n\n"
         
         return articles_text
     
@@ -202,6 +240,24 @@ class LangChainForexSummarizer:
                 "timestamp": datetime.now().isoformat()
             }
         
+        # Create a trace for Langfuse at the beginning
+        trace_id = None
+        if langchain_monitoring and langchain_monitoring.langfuse_monitor and langchain_monitoring.langfuse_monitor.enabled:
+            try:
+                trace_id = langchain_monitoring.langfuse_monitor.create_trace(
+                    name=f"forex_summary:{query}",
+                    metadata={
+                        "query": query,
+                        "article_count": len(articles),
+                        "use_cache": use_cache
+                    },
+                    tags=["forex", "summary"],
+                    input=query  # Explicitly set input
+                )
+                logger.info(f"Created Langfuse trace for summarization: {trace_id}")
+            except Exception as e:
+                logger.warning(f"Error creating Langfuse trace: {e}")
+        
         # Generate cache key before checking cache
         cache_key = None
         if use_cache:
@@ -209,6 +265,29 @@ class LangChainForexSummarizer:
             cached_result = self.cache.get(cache_key)
             if cached_result:
                 logger.info(f"Using cached summary for query: {query}")
+                
+                # Log cache hit to Langfuse if trace exists
+                if trace_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
+                    try:
+                        langchain_monitoring.langfuse_monitor.track_span(
+                            trace=trace_id,
+                            name="cache_hit",
+                            metadata={
+                                "query": query,
+                                "cache_key": cache_key
+                            },
+                            status="success",
+                            input=query,
+                            output="Retrieved from cache"
+                        )
+                        # Update trace with output
+                        langchain_monitoring.langfuse_monitor.langfuse.update_trace(
+                            trace_id=trace_id,
+                            output=cached_result.get("formatted_text", cached_result.get("summary", ""))
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error logging cache hit to Langfuse: {e}")
+                
                 return cached_result
         
         # Process articles for better currency pair detection
@@ -221,10 +300,46 @@ class LangChainForexSummarizer:
             # Get the current time before generating summary
             start_time = datetime.now()
             
+            # Track preprocessing in Langfuse
+            if trace_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
+                try:
+                    langchain_monitoring.langfuse_monitor.track_span(
+                        trace=trace_id,
+                        name="preprocessing",
+                        metadata={
+                            "article_count": len(articles),
+                            "selected_count": min(len(articles), int(os.getenv("MAX_SUMMARY_ARTICLES", "15"))),
+                            "formatted_chars": len(formatted_articles)
+                        },
+                        status="success",
+                        input=query,
+                        output=f"Processed {len(articles)} articles for summarization"
+                    )
+                except Exception as e:
+                    logger.warning(f"Error tracking preprocessing in Langfuse: {e}")
+            
             # Generate summary using LangChain
             logger.info(f"Generating forex summary with LangChain for {len(articles)} articles")
             
             try:
+                # Start LLM call span in Langfuse
+                llm_span_id = None
+                if trace_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
+                    try:
+                        llm_span_id = langchain_monitoring.langfuse_monitor.track_span(
+                            trace=trace_id,
+                            name="llm_call",
+                            metadata={
+                                "model": os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+                                "temperature": float(os.getenv("TEMPERATURE", "0.7")),
+                                "input_chars": len(formatted_articles)
+                            },
+                            status="running",
+                            input=formatted_articles
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error starting LLM call span in Langfuse: {e}")
+                
                 # Run the chain with the newer async invoke method
                 result = await self.chain.ainvoke({
                     "query": query,
@@ -241,7 +356,25 @@ class LangChainForexSummarizer:
                 else:
                     summary_text = str(result)
                 
-                logger.info(f"Generated summary: {len(summary_text)} characters")
+                logger.info(f"Generated summary: {len(summary_text)} characters in {duration_ms}ms")
+                
+                # Update LLM call span in Langfuse
+                if llm_span_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
+                    try:
+                        langchain_monitoring.langfuse_monitor.track_span(
+                            trace=trace_id,
+                            name="llm_call_complete",
+                            metadata={
+                                "duration_ms": duration_ms,
+                                "output_chars": len(summary_text),
+                                "model": os.getenv("AZURE_OPENAI_DEPLOYMENT")
+                            },
+                            status="success",
+                            input=formatted_articles,
+                            output=summary_text
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error updating LLM call span in Langfuse: {e}")
                 
                 # Estimate token usage
                 token_usage = {}
@@ -253,8 +386,17 @@ class LangChainForexSummarizer:
                 # If not available from LangChain, estimate it
                 if not token_usage and langchain_monitoring and langchain_monitoring.langfuse_monitor:
                     try:
-                        prompt_tokens = langchain_monitoring.langfuse_monitor.count_tokens(formatted_articles)
-                        completion_tokens = langchain_monitoring.langfuse_monitor.count_tokens(summary_text)
+                        # Use tiktoken for better estimation if available
+                        try:
+                            import tiktoken
+                            encoding = tiktoken.encoding_for_model("gpt-4")
+                            prompt_tokens = len(encoding.encode(formatted_articles))
+                            completion_tokens = len(encoding.encode(summary_text))
+                        except ImportError:
+                            # Fallback to simple estimation
+                            prompt_tokens = langchain_monitoring.langfuse_monitor.count_tokens(formatted_articles)
+                            completion_tokens = langchain_monitoring.langfuse_monitor.count_tokens(summary_text)
+                            
                         token_usage = {
                             "prompt_tokens": prompt_tokens,
                             "completion_tokens": completion_tokens,
@@ -266,56 +408,94 @@ class LangChainForexSummarizer:
             except Exception as e:
                 logger.error(f"Error in chain execution: {e}")
                 logger.error(f"Error type: {type(e)}")
+                
+                # Update Langfuse trace with error
+                if trace_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
+                    try:
+                        langchain_monitoring.langfuse_monitor.track_span(
+                            trace=trace_id,
+                            name="llm_error",
+                            metadata={
+                                "error": str(e),
+                                "error_type": str(type(e))
+                            },
+                            status="error",
+                            input=formatted_articles,
+                            output=f"Error: {str(e)}"
+                        )
+                    except Exception as trace_error:
+                        logger.warning(f"Error updating Langfuse trace with error: {trace_error}")
+                
                 raise Exception(f"Error in LangChain execution: {e}")
+            
+            # Start parsing span in Langfuse
+            parsing_span_id = None
+            if trace_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
+                try:
+                    parsing_span_id = langchain_monitoring.langfuse_monitor.track_span(
+                        trace=trace_id,
+                        name="parsing_start",
+                        metadata={
+                            "summary_chars": len(summary_text)
+                        },
+                        status="running",
+                        input=summary_text
+                    )
+                except Exception as e:
+                    logger.warning(f"Error starting parsing span in Langfuse: {e}")
             
             # Parse the response
             parsed_result = self._parse_structured_response(summary_text)
+            
+            # Update parsing span in Langfuse
+            if parsing_span_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
+                try:
+                    langchain_monitoring.langfuse_monitor.track_span(
+                        trace=trace_id,
+                        name="parsing_complete",
+                        metadata={
+                            "parsed_fields": list(parsed_result.keys()),
+                            "currency_pairs": len(parsed_result.get("currencyPairRankings", [])),
+                            "key_points": len(parsed_result.get("keyPoints", []))
+                        },
+                        status="success",
+                        input=summary_text,
+                        output=str(parsed_result)
+                    )
+                except Exception as e:
+                    logger.warning(f"Error updating parsing span in Langfuse: {e}")
             
             # Add timestamp and formatted text
             parsed_result["timestamp"] = datetime.now().isoformat()
             parsed_result["formatted_text"] = summary_text
             parsed_result["articleCount"] = len(articles)
             
-            # Track metrics in Langfuse if available
-            if langchain_monitoring and langchain_monitoring.langfuse_monitor:
+            # Extract currency pairs for metrics
+            currency_pairs = []
+            if "currencyPairRankings" in parsed_result:
+                currency_pairs = [pair.get("pair", "") for pair in parsed_result["currencyPairRankings"]]
+            
+            # Update trace in Langfuse with final result
+            if trace_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
                 try:
-                    # Define cache_key to avoid reference errors
-                    cache_key = self._get_cache_key(articles, query) if use_cache else None
-                    
-                    # Get active trace from Langfuse if available
-                    trace = None
-                    if hasattr(langchain_monitoring.langfuse_monitor.langfuse, "get_current_trace"):
-                        try:
-                            trace_id = langchain_monitoring.langfuse_monitor.langfuse.get_current_trace()
-                            if trace_id:
-                                # Create a wrapper trace for the existing trace
-                                trace = StatefulTraceClient(
-                                    id=trace_id, 
-                                    langfuse=langchain_monitoring.langfuse_monitor.langfuse
-                                )
-                        except Exception:
-                            pass
-                    
-                    # Extract currency pairs for metrics
-                    currency_pairs = []
-                    if "currencyPairRankings" in parsed_result:
-                        currency_pairs = [pair.get("pair", "") for pair in parsed_result["currencyPairRankings"]]
-                    
-                    # Track summarization metrics
-                    if trace:
-                        langchain_monitoring.langfuse_monitor.track_summarization_metrics(
-                            trace=trace,
-                            forex_summary=parsed_result,
-                            processing_time_ms=duration_ms,
-                            token_usage=token_usage,
-                            cache_hit=cached_result is not None,
-                            currency_pairs=currency_pairs
-                        )
+                    # Update trace with output
+                    langchain_monitoring.langfuse_monitor.langfuse.update_trace(
+                        trace_id=trace_id,
+                        output=summary_text,
+                        metadata={
+                            "processing_time_ms": duration_ms,
+                            "token_usage": token_usage,
+                            "currency_pairs": currency_pairs,
+                            "sentiment_score": parsed_result.get("sentiment", {}).get("score", 0),
+                            "impact_level": parsed_result.get("impactLevel", "UNKNOWN"),
+                            "article_count": len(articles)
+                        }
+                    )
                 except Exception as e:
-                    logger.warning(f"Error tracking Langfuse metrics: {e}")
+                    logger.warning(f"Error updating Langfuse trace: {e}")
             
             # Cache the result if enabled
-            if use_cache:
+            if use_cache and cache_key:
                 self.cache.set(cache_key, parsed_result)
                 logger.debug(f"Cached summary for key: {cache_key}")
             
@@ -323,6 +503,24 @@ class LangChainForexSummarizer:
             
         except Exception as e:
             logger.error(f"Error generating summary with LangChain: {e}")
+            
+            # Update Langfuse trace with error
+            if trace_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
+                try:
+                    langchain_monitoring.langfuse_monitor.track_span(
+                        trace=trace_id,
+                        name="summary_error",
+                        metadata={
+                            "error": str(e),
+                            "error_type": str(type(e))
+                        },
+                        status="error",
+                        input=query,
+                        output=f"Error: {str(e)}"
+                    )
+                except Exception as trace_error:
+                    logger.warning(f"Error updating Langfuse trace with error: {trace_error}")
+            
             raise
     
     def _parse_structured_response(self, text: str) -> Dict[str, Any]:

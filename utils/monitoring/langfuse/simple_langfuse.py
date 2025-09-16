@@ -8,7 +8,34 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from loguru import logger
 
-from langfuse import Langfuse
+try:
+    from langfuse import Langfuse
+except ImportError:
+    # Import failed, try to use our mock implementation
+    try:
+        from langfuse_mock import Langfuse
+        logger.warning("Using mock Langfuse implementation due to import error")
+    except ImportError:
+        # Define a simple mock class right here as last resort
+        class Langfuse:
+            def __init__(self, *args, **kwargs):
+                pass
+                
+            def create_event(self, *args, **kwargs):
+                return "mock-id"
+                
+            def create_trace(self, *args, **kwargs):
+                return "mock-trace-id"
+                
+            def create_generation(self, *args, **kwargs):
+                return "mock-generation-id"
+                
+            def create_observation(self, *args, **kwargs):
+                return "mock-observation-id"
+                
+            def flush(self, *args, **kwargs):
+                pass
+        logger.warning("Using inline mock Langfuse implementation due to import errors")
 
 class SimpleLangfuseMonitor:
     """Simplified Langfuse monitoring client for tracking LLM operations."""

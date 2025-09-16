@@ -1,3 +1,6 @@
+# Import patch BEFORE any other imports
+import opentelemetry_patch
+
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel

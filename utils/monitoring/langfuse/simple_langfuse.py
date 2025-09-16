@@ -9,7 +9,24 @@ from datetime import datetime
 from loguru import logger
 
 try:
+    # Attempt to import Langfuse with version detection
     from langfuse import Langfuse
+    import importlib.metadata
+    try:
+        langfuse_version = importlib.metadata.version("langfuse")
+        logger.info(f"Detected Langfuse version: {langfuse_version}")
+        
+        # Handle different Langfuse API versions
+        if langfuse_version.startswith("3."):
+            logger.info("Using Langfuse 3.x API")
+            # Import observe for Langfuse 3.x
+            try:
+                from langfuse import observe
+                logger.info("Successfully imported Langfuse observe decorator")
+            except ImportError:
+                logger.warning("observe decorator not available in this Langfuse version")
+    except importlib.metadata.PackageNotFoundError:
+        logger.warning("Could not determine Langfuse version")
 except ImportError:
     # Import failed, try to use our mock implementation
     try:

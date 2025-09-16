@@ -6,7 +6,23 @@ import os
 from typing import Dict, Any, Optional
 from loguru import logger
 
-from langfuse import Langfuse, observe
+# Try to import Langfuse components with appropriate error handling
+try:
+    from langfuse import Langfuse
+    # For Langfuse 3.x compatibility
+    try:
+        from langfuse import observe
+    except ImportError:
+        # Create a compatible observe decorator for older versions
+        def observe(*args, **kwargs):
+            def decorator(func):
+                def wrapper(*args, **kwargs):
+                    return func(*args, **kwargs)
+                return wrapper
+            return decorator
+except ImportError:
+    logger.warning("Langfuse import failed. Monitoring will be limited.")
+    # Create placeholder classes if needed
 
 # Create placeholder for LangfuseCallbackHandler
 class LangfuseCallbackHandler:

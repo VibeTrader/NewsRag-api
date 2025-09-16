@@ -179,9 +179,61 @@ def create_mock_langfuse():
                 
             def flush(self, *args, **kwargs):
                 pass
+        
+        # Create mock observe function (decorator)
+        def observe(*args, **kwargs):
+            def decorator(func):
+                def wrapper(*args, **kwargs):
+                    return func(*args, **kwargs)
+                return wrapper
+            return decorator
                 
-        # Add the mock class to the module
+        # Add the mock class and function to the module
         langfuse_module.Langfuse = MockLangfuse
+        langfuse_module.observe = observe
+        
+        # Add a mock LangfuseCallbackHandler class for LangChain
+        class MockLangfuseCallbackHandler:
+            def __init__(self, *args, **kwargs):
+                # Add attributes that LangChain expects
+                self.ignore_chain = False
+                self.ignore_agent = False
+                self.ignore_llm = False
+                self.ignore_retriever = False
+                self.ignore_chat_model = False
+                
+            # Add required methods
+            def run_inline(self, *args, **kwargs):
+                return None
+                
+            def raise_error(self, error):
+                """Handle errors"""
+                pass
+                
+            def on_text(self, *args, **kwargs):
+                """Handle text events"""
+                pass
+                
+            def on_llm_start(self, *args, **kwargs):
+                pass
+                
+            def on_llm_end(self, *args, **kwargs):
+                pass
+                
+            def on_llm_error(self, *args, **kwargs):
+                pass
+                
+            def on_chain_start(self, *args, **kwargs):
+                pass
+                
+            def on_chain_end(self, *args, **kwargs):
+                pass
+                
+            def on_chain_error(self, *args, **kwargs):
+                pass
+                
+        # Add to module
+        langfuse_module.LangfuseCallbackHandler = MockLangfuseCallbackHandler
         
         # Set the module in sys.modules
         sys.modules["langfuse"] = langfuse_module

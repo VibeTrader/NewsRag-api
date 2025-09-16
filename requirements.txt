@@ -32,3 +32,10 @@ pytz>=2023.3
 
 # Optional: Health monitoring
 psutil>=5.9.6
+
+# Update your requirements.txt with these specific versions
+langfuse==3.3.4
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-exporter-otlp==1.21.0
+opentelemetry-instrumentation==0.42b0

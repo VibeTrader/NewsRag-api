@@ -1,3 +1,18 @@
+# Force reinstall the correct versions of OpenTelemetry
+echo "Reinstalling OpenTelemetry packages with correct versions..."
+/home/site/wwwroot/antenv/bin/pip install --force-reinstall --no-cache-dir opentelemetry-api>=1.33.1,<2.0.0
+/home/site/wwwroot/antenv/bin/pip install --force-reinstall --no-cache-dir opentelemetry-sdk>=1.33.1,<2.0.0
+/home/site/wwwroot/antenv/bin/pip install --force-reinstall --no-cache-dir opentelemetry-exporter-otlp>=1.33.1,<2.0.0
+
+# Reinstall Langfuse
+echo "Reinstalling Langfuse..."
+/home/site/wwwroot/antenv/bin/pip install --force-reinstall --no-cache-dir langfuse==3.3.4
+
+# List installed versions for debugging
+echo "Installed package versions:"
+/home/site/wwwroot/antenv/bin/pip list | grep opentelemetry
+/home/site/wwwroot/antenv/bin/pip list | grep langfuse
+
+# Start the application
+echo "Starting the application..."
 /home/site/wwwroot/antenv/bin/python -m uvicorn api:app --host 0.0.0.0 --port 8000
-
-

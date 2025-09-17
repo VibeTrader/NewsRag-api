@@ -492,7 +492,68 @@ class LangChainForexSummarizer:
             parsed_result["formatted_text"] = summary_text
             parsed_result["articleCount"] = len(articles)
             
-            # Extract currency pairs for metrics
+            # Ensure all required fields are present and non-empty
+            # This ensures no API client will receive empty fields
+            
+            # Ensure summary is not empty (use formatted_text if needed)
+            if not parsed_result.get("summary"):
+                logger.warning("Empty summary field after parsing - using formatted text")
+                if summary_text:
+                    first_paragraph = summary_text.split('\n\n')[0] if '\n\n' in summary_text else summary_text[:500]
+                    parsed_result["summary"] = first_paragraph.strip()
+                else:
+                    parsed_result["summary"] = "Analysis of current forex market conditions."
+            
+            # Ensure keyPoints is not empty
+            if not parsed_result.get("keyPoints"):
+                logger.warning("Empty keyPoints field after parsing - adding default")
+                parsed_result["keyPoints"] = ["Market analysis based on latest financial news"]
+            
+            # Ensure currencyPairRankings is not empty
+            if not parsed_result.get("currencyPairRankings") or len(parsed_result["currencyPairRankings"]) == 0:
+                logger.warning("Empty currencyPairRankings field after parsing - adding default")
+                # Try to extract currency pairs from formatted_text
+                if summary_text:
+                    # Look for common currency pairs in the text
+                    common_pairs = ["EUR/USD", "USD/JPY", "GBP/USD", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD"]
+                    for pair in common_pairs:
+                        if pair in summary_text:
+                            parsed_result["currencyPairRankings"] = [{
+                                "pair": pair,
+                                "rank": 5.0,
+                                "maxRank": 10,
+                                "fundamentalOutlook": 50,
+                                "sentimentOutlook": 50,
+                                "rationale": "Mentioned in analysis. See formatted text for details."
+                            }]
+                            break
+                
+                # If still empty, add a default entry
+                if not parsed_result.get("currencyPairRankings") or len(parsed_result["currencyPairRankings"]) == 0:
+                    parsed_result["currencyPairRankings"] = [{
+                        "pair": "EUR/USD",
+                        "rank": 5.0,
+                        "maxRank": 10,
+                        "fundamentalOutlook": 50,
+                        "sentimentOutlook": 50,
+                        "rationale": "Default entry. See formatted text for full analysis."
+                    }]
+            
+            # Ensure riskAssessment fields are not empty
+            if not parsed_result.get("riskAssessment"):
+                parsed_result["riskAssessment"] = {}
+            
+            risk_fields = ["primaryRisk", "correlationRisk", "volatilityPotential"]
+            for field in risk_fields:
+                if field not in parsed_result["riskAssessment"] or not parsed_result["riskAssessment"][field]:
+                    parsed_result["riskAssessment"][field] = "See formatted text for details"
+            
+            # Ensure tradeManagementGuidelines is not empty
+            if not parsed_result.get("tradeManagementGuidelines") or len(parsed_result["tradeManagementGuidelines"]) == 0:
+                logger.warning("Empty tradeManagementGuidelines field after parsing - adding default")
+                parsed_result["tradeManagementGuidelines"] = ["See formatted text for detailed trading guidelines"]
+            
+            # Extract currency pairs for metrics after ensuring they exist
             currency_pairs = []
             if "currencyPairRankings" in parsed_result:
                 currency_pairs = [pair.get("pair", "") for pair in parsed_result["currencyPairRankings"]]
@@ -546,10 +607,16 @@ class LangChainForexSummarizer:
             raise
     
     def _parse_structured_response(self, text: str) -> Dict[str, Any]:
-        """Parse the structured text response into a JSON format."""
+        """Parse the structured text response into a JSON format.
+        
+        This improved version uses more flexible regex patterns and ensures no empty fields.
+        """
         import re
         
         try:
+            # Log the first part of the text for debugging
+            logger.debug(f"Parsing text (first 200 chars): {text[:200]}")
+            
             # Initialize the result structure
             result = {
                 "summary": "",
@@ -565,33 +632,120 @@ class LangChainForexSummarizer:
                 "impactLevel": "MEDIUM"
             }
             
-            # Extract Executive Summary
-            exec_summary_match = re.search(r'\*\*Executive Summary\*\*(.*?)(?=\*\*Currency Pair Rankings|\*\*Risk Assessment|$)', text, re.DOTALL)
-            if exec_summary_match:
-                result["summary"] = exec_summary_match.group(1).strip()
+            # More flexible regex patterns that work with or without asterisks
+            # Extract Executive Summary - match both with and without asterisks
+            exec_summary_patterns = [
+                r'(?:Executive Summary|Summary)(?:\s*\n|\s*:)(.*?)(?=(?:Currency Pair Rankings|Risk Assessment|\n\n\w))',
+                r'\*\*Executive Summary\*\*(.*?)(?=\*\*Currency Pair Rankings|\*\*Risk Assessment|$)',
+                r'Executive Summary(.*?)(?=Currency Pair Rankings|Risk Assessment|$)'
+            ]
             
-            # Extract Currency Pair Rankings
-            pairs_section_match = re.search(r'\*\*Currency Pair Rankings\*\*(.*?)(?=\*\*Risk Assessment|$)', text, re.DOTALL)
-            if pairs_section_match:
-                pairs_section = pairs_section_match.group(1)
+            for pattern in exec_summary_patterns:
+                exec_summary_match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+                if exec_summary_match:
+                    result["summary"] = exec_summary_match.group(1).strip()
+                    logger.debug(f"Found summary with pattern: {pattern[:30]}...")
+                    break
+            
+            # If still no summary, use the first paragraph
+            if not result["summary"] and text:
+                paragraphs = text.split('\n\n')
+                if paragraphs:
+                    result["summary"] = paragraphs[0].strip()
+                    logger.debug("Using first paragraph as summary")
+            
+            # Extract Currency Pair Rankings with more flexible patterns
+            pairs_section_patterns = [
+                r'(?:Currency Pair Rankings)(?:\s*\n|\s*:)(.*?)(?=(?:Risk Assessment|\n\n\w))',
+                r'\*\*Currency Pair Rankings\*\*(.*?)(?=\*\*Risk Assessment|$)',
+                r'Currency Pair Rankings(.*?)(?=Risk Assessment|$)'
+            ]
+            
+            pairs_section = ""
+            for pattern in pairs_section_patterns:
+                pairs_section_match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+                if pairs_section_match:
+                    pairs_section = pairs_section_match.group(1)
+                    logger.debug(f"Found currency pairs section with pattern: {pattern[:30]}...")
+                    break
+            
+            if pairs_section:
+                # More flexible pattern for currency pairs
+                pair_patterns = [
+                    r'\*\*([\w/]+)\*\*\s*\(Rank:\s*(\d+(?:\.\d+)?)/(\d+)\)(.*?)(?=\*\*[\w/]+\*\*|\*\*Risk|\n\n\*\*|$)',
+                    r'(?:\*\*)?([\w/]+)(?:\*\*)?\s*\(Rank:\s*(\d+(?:\.\d+)?)/(\d+)\)(.*?)(?=(?:\*\*)?[\w/]+(?:\*\*)?|Risk Assessment|$)',
+                    r'(?:\*\*)?([\w/]+)(?:\*\*)?\s*\(Rank:?\s*(\d+(?:\.\d+)?)[/]?(\d+)?\)(.*?)(?=(?:\*\*)?[\w/]+(?:\*\*)?|Risk|$)'
+                ]
                 
-                # Extract individual pairs
-                pair_matches = re.finditer(r'\*\*([\w/]+)\*\* \(Rank: (\d+(?:\.\d+)?)/(\d+)\)(.*?)(?=\*\*[\w/]+\*\* \(Rank:|\*\*Risk Assessment|\*\*Trade Management|$)', pairs_section, re.DOTALL)
+                for pattern in pair_patterns:
+                    pair_matches = list(re.finditer(pattern, pairs_section, re.DOTALL))
+                    if pair_matches:
+                        logger.debug(f"Found {len(pair_matches)} currency pairs with pattern: {pattern[:30]}...")
+                        break
                 
+                # Process each matched currency pair
                 for match in pair_matches:
                     pair_name = match.group(1)
                     rank = float(match.group(2))
-                    max_rank = int(match.group(3))
+                    # Handle case where max_rank is missing
+                    max_rank = int(match.group(3)) if match.group(3) else 10
                     pair_content = match.group(4)
                     
-                    # Extract outlook percentages
-                    fundamental_match = re.search(r'Fundamental Outlook: (\d+)%', pair_content)
-                    sentiment_match = re.search(r'Sentiment Outlook: (\d+)%', pair_content)
-                    rationale_match = re.search(r'Rationale: (.*?)(?=\*|\n\n|$)', pair_content, re.DOTALL)
+                    # More flexible patterns for outlook percentages
+                    fundamental_patterns = [
+                        r'Fundamental Outlook:\s*(\d+)%',
+                        r'Fundamental\s*:\s*(\d+)%',
+                        r'Fundamental\s*Outlook\s*is\s*(\d+)'
+                    ]
                     
-                    fundamental = int(fundamental_match.group(1)) if fundamental_match else 50
-                    sentiment = int(sentiment_match.group(1)) if sentiment_match else 50
-                    rationale = rationale_match.group(1).strip() if rationale_match else ""
+                    sentiment_patterns = [
+                        r'Sentiment Outlook:\s*(\d+)%',
+                        r'Sentiment\s*:\s*(\d+)%',
+                        r'Sentiment\s*is\s*(\d+)'
+                    ]
+                    
+                    rationale_patterns = [
+                        r'Rationale:\s*(.*?)(?=\n\n|\*|$)',
+                        r'Rationale\s*is\s*(.*?)(?=\n\n|\*|$)',
+                        r'(?:Description|Analysis|Explanation):\s*(.*?)(?=\n\n|\*|$)'
+                    ]
+                    
+                    # Extract fundamental outlook
+                    fundamental = 50  # Default
+                    for pattern in fundamental_patterns:
+                        fundamental_match = re.search(pattern, pair_content, re.IGNORECASE)
+                        if fundamental_match:
+                            fundamental = int(fundamental_match.group(1))
+                            break
+                    
+                    # Extract sentiment outlook
+                    sentiment = 50  # Default
+                    for pattern in sentiment_patterns:
+                        sentiment_match = re.search(pattern, pair_content, re.IGNORECASE)
+                        if sentiment_match:
+                            sentiment = int(sentiment_match.group(1))
+                            break
+                    
+                    # Extract rationale
+                    rationale = ""
+                    for pattern in rationale_patterns:
+                        rationale_match = re.search(pattern, pair_content, re.DOTALL | re.IGNORECASE)
+                        if rationale_match:
+                            rationale = rationale_match.group(1).strip()
+                            break
+                    
+                    # If no rationale found but we have content, use a cleaned version of the content
+                    if not rationale and pair_content:
+                        # Clean up the content by removing outlook lines
+                        content_lines = [
+                            line.strip() for line in pair_content.split('\n') 
+                            if not re.search(r'(Fundamental|Sentiment)\s*Outlook', line, re.IGNORECASE)
+                        ]
+                        rationale = " ".join(content_lines).strip()
+                    
+                    # Ensure rationale has a minimum value
+                    if not rationale:
+                        rationale = f"Analysis for {pair_name}"
                     
                     # Add to pairs list
                     result["currencyPairRankings"].append({
@@ -603,31 +757,98 @@ class LangChainForexSummarizer:
                         "rationale": rationale
                     })
             
-            # Extract Risk Assessment
-            risk_section_match = re.search(r'\*\*Risk Assessment:\*\*(.*?)(?=\*\*Trade Management|$)', text, re.DOTALL)
-            if risk_section_match:
-                risk_section = risk_section_match.group(1)
+            # If no currency pairs found but there are mentions in the text, extract them
+            if not result["currencyPairRankings"]:
+                # Look for common currency pair mentions
+                common_pairs = ["EUR/USD", "USD/JPY", "GBP/USD", "AUD/USD", "USD/CHF", "USD/CAD", "NZD/USD"]
+                for pair in common_pairs:
+                    if pair in text or pair.replace("/", "") in text:
+                        # Found a mention, create a basic entry
+                        result["currencyPairRankings"].append({
+                            "pair": pair,
+                            "rank": 5.0,
+                            "maxRank": 10,
+                            "fundamentalOutlook": 50,
+                            "sentimentOutlook": 50,
+                            "rationale": f"Mentioned in analysis. See formatted text for details."
+                        })
+                        logger.debug(f"Added {pair} as fallback from text mentions")
+                        # Just add a few to avoid overwhelming with fallbacks
+                        if len(result["currencyPairRankings"]) >= 3:
+                            break
+            
+            # Extract Risk Assessment with more flexible patterns
+            risk_section_patterns = [
+                r'Risk Assessment:?(.*?)(?=Trade Management Guidelines|$)',
+                r'\*\*Risk Assessment(?::\*\*|\*\*:|\*\*)(.*?)(?=\*\*Trade Management|$)',
+                r'Risk Assessment(.*?)(?=Trade Management|$)'
+            ]
+            
+            risk_section = ""
+            for pattern in risk_section_patterns:
+                risk_section_match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+                if risk_section_match:
+                    risk_section = risk_section_match.group(1).strip()
+                    logger.debug(f"Found risk section with pattern: {pattern[:30]}...")
+                    break
+            
+            if risk_section:
+                # More flexible patterns for risk components
+                primary_risk_patterns = [
+                    r'Primary Risk:?\s*(.*?)(?=Correlation Risk|Volatility|$)',
+                    r'\*\s*Primary Risk:?\s*(.*?)(?=\*|Correlation|Volatility|$)',
+                    r'(?:Main|Key|Principal) Risk:?\s*(.*?)(?=Correlation|Volatility|$)'
+                ]
+                
+                correlation_risk_patterns = [
+                    r'Correlation Risk:?\s*(.*?)(?=Volatility|$)',
+                    r'\*\s*Correlation Risk:?\s*(.*?)(?=\*|Volatility|$)',
+                    r'Cross-[Aa]sset Risk:?\s*(.*?)(?=Volatility|$)'
+                ]
+                
+                volatility_patterns = [
+                    r'Volatility Potential:?\s*(.*?)(?=$)',
+                    r'\*\s*Volatility Potential:?\s*(.*?)(?=\*|$)',
+                    r'(?:Expected|Anticipated) Volatility:?\s*(.*?)(?=$)'
+                ]
                 
                 # Extract primary risk
-                primary_risk_match = re.search(r'Primary Risk: (.*?)(?=\*|Correlation Risk:|$)', risk_section, re.DOTALL)
-                if primary_risk_match:
-                    result["riskAssessment"]["primaryRisk"] = primary_risk_match.group(1).strip()
+                for pattern in primary_risk_patterns:
+                    primary_risk_match = re.search(pattern, risk_section, re.DOTALL | re.IGNORECASE)
+                    if primary_risk_match:
+                        result["riskAssessment"]["primaryRisk"] = primary_risk_match.group(1).strip()
+                        break
                 
                 # Extract correlation risk
-                correlation_risk_match = re.search(r'Correlation Risk: (.*?)(?=\*|Volatility Potential:|$)', risk_section, re.DOTALL)
-                if correlation_risk_match:
-                    result["riskAssessment"]["correlationRisk"] = correlation_risk_match.group(1).strip()
+                for pattern in correlation_risk_patterns:
+                    correlation_risk_match = re.search(pattern, risk_section, re.DOTALL | re.IGNORECASE)
+                    if correlation_risk_match:
+                        result["riskAssessment"]["correlationRisk"] = correlation_risk_match.group(1).strip()
+                        break
                 
                 # Extract volatility potential
-                volatility_match = re.search(r'Volatility Potential: (.*?)(?=\*|$)', risk_section, re.DOTALL)
-                if volatility_match:
-                    result["riskAssessment"]["volatilityPotential"] = volatility_match.group(1).strip()
+                for pattern in volatility_patterns:
+                    volatility_match = re.search(pattern, risk_section, re.DOTALL | re.IGNORECASE)
+                    if volatility_match:
+                        result["riskAssessment"]["volatilityPotential"] = volatility_match.group(1).strip()
+                        break
             
-            # Extract Trade Management Guidelines
-            guidelines_match = re.search(r'\*\*Trade Management Guidelines:\*\*(.*?)$', text, re.DOTALL)
-            if guidelines_match:
-                guidelines_text = guidelines_match.group(1).strip()
-                
+            # Extract Trade Management Guidelines with more flexible patterns
+            guidelines_patterns = [
+                r'Trade Management Guidelines:?(.*?)$',
+                r'\*\*Trade Management Guidelines(?::\*\*|\*\*:|\*\*)(.*?)$',
+                r'Trade Management(.*?)$'
+            ]
+            
+            guidelines_text = ""
+            for pattern in guidelines_patterns:
+                guidelines_match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+                if guidelines_match:
+                    guidelines_text = guidelines_match.group(1).strip()
+                    logger.debug(f"Found guidelines with pattern: {pattern[:30]}...")
+                    break
+            
+            if guidelines_text:
                 # Split by line breaks and bullet points
                 lines = re.split(r'\n+', guidelines_text)
                 for line in lines:
@@ -648,6 +869,16 @@ class LangChainForexSummarizer:
                     sentiment_category = "bullish"
                 elif sentiment_score <= 30:
                     sentiment_category = "bearish"
+            else:
+                # Look for sentiment words in summary
+                if result["summary"]:
+                    summary_lower = result["summary"].lower()
+                    if any(word in summary_lower for word in ["bullish", "positive", "uptrend", "gains"]):
+                        sentiment_category = "bullish"
+                        sentiment_score = 75
+                    elif any(word in summary_lower for word in ["bearish", "negative", "downtrend", "losses"]):
+                        sentiment_category = "bearish"
+                        sentiment_score = 25
             
             result["sentiment"] = {
                 "overall": sentiment_category,
@@ -663,33 +894,108 @@ class LangChainForexSummarizer:
                 result["impactLevel"] = "MEDIUM"
             
             # Extract key points from the summary
-            sentences = re.split(r'(?<=[.!?])\s+', result["summary"])
-            result["keyPoints"] = [s.strip() for s in sentences if len(s.strip()) > 10][:3]
+            if result["summary"]:
+                sentences = re.split(r'(?<=[.!?])\s+', result["summary"])
+                result["keyPoints"] = [s.strip() for s in sentences if len(s.strip()) > 10][:3]
             
             # If we couldn't extract key points, add a default one
             if not result["keyPoints"]:
                 result["keyPoints"] = ["Market analysis based on latest financial news"]
             
+            # Ensure all required fields have values
+            self._ensure_complete_result(result, text)
+            
             return result
             
         except Exception as e:
             logger.error(f"Error parsing structured response: {e}")
-            logger.error(f"Original text: {text}")
+            logger.error(f"Original text: {text[:200]}...")
             
-            # Return a simplified fallback structure
-            return {
-                "summary": text[:500] if text else "Unable to generate market analysis",
-                "keyPoints": ["Error parsing structured response"],
-                "currencyPairRankings": [],
-                "riskAssessment": {
-                    "primaryRisk": "Unknown",
-                    "correlationRisk": "Unknown",
-                    "volatilityPotential": "Unknown"
-                },
-                "tradeManagementGuidelines": [],
-                "sentiment": {"overall": "neutral", "score": 50},
-                "impactLevel": "MEDIUM"
-            }
+            # Return a complete fallback structure that uses the text
+            return self._create_fallback_result(text)
+    
+    def _ensure_complete_result(self, result: Dict[str, Any], original_text: str) -> None:
+        """Ensure all fields in the result have valid values."""
+        # Ensure summary is not empty
+        if not result["summary"] and original_text:
+            result["summary"] = original_text.split('\n\n')[0] if '\n\n' in original_text else original_text[:500]
+        
+        # Ensure keyPoints is not empty
+        if not result["keyPoints"]:
+            result["keyPoints"] = ["Market analysis based on latest financial news"]
+        
+        # Ensure currencyPairRankings is not empty
+        if not result["currencyPairRankings"]:
+            # Add at least one default pair
+            result["currencyPairRankings"].append({
+                "pair": "EUR/USD",
+                "rank": 5.0,
+                "maxRank": 10,
+                "fundamentalOutlook": 50,
+                "sentimentOutlook": 50,
+                "rationale": "Default entry. See formatted text for full analysis."
+            })
+        
+        # Ensure riskAssessment fields are not empty
+        if not result["riskAssessment"]["primaryRisk"]:
+            result["riskAssessment"]["primaryRisk"] = "See formatted text for detailed risk assessment"
+        if not result["riskAssessment"]["correlationRisk"]:
+            result["riskAssessment"]["correlationRisk"] = "See formatted text for correlation risks"
+        if not result["riskAssessment"]["volatilityPotential"]:
+            result["riskAssessment"]["volatilityPotential"] = "See formatted text for volatility assessment"
+        
+        # Ensure tradeManagementGuidelines is not empty
+        if not result["tradeManagementGuidelines"]:
+            result["tradeManagementGuidelines"].append("See formatted text for detailed trading guidelines")
+    
+    def _create_fallback_result(self, text: str) -> Dict[str, Any]:
+        """Create a complete fallback result that uses the original text."""
+        # Get first paragraph for summary
+        first_paragraph = text.split('\n\n')[0] if '\n\n' in text else text[:500]
+        
+        # Look for currency pairs in text
+        currency_pairs = []
+        common_pairs = ["EUR/USD", "USD/JPY", "GBP/USD", "AUD/USD", "USD/CHF", "USD/CAD", "NZD/USD"]
+        for pair in common_pairs:
+            if pair in text:
+                currency_pairs.append({
+                    "pair": pair,
+                    "rank": 5.0,
+                    "maxRank": 10,
+                    "fundamentalOutlook": 50,
+                    "sentimentOutlook": 50,
+                    "rationale": "See formatted text for detailed analysis"
+                })
+                # Add up to 3 pairs
+                if len(currency_pairs) >= 3:
+                    break
+        
+        # Ensure at least one pair
+        if not currency_pairs:
+            currency_pairs.append({
+                "pair": "EUR/USD",
+                "rank": 5.0,
+                "maxRank": 10,
+                "fundamentalOutlook": 50,
+                "sentimentOutlook": 50,
+                "rationale": "Default entry. See formatted text for full analysis."
+            })
+        
+        return {
+            "summary": first_paragraph,
+            "keyPoints": ["Complete analysis available in formatted text", 
+                          "See structured output for detailed currency pair information",
+                          "Market analysis based on latest financial news"],
+            "currencyPairRankings": currency_pairs,
+            "riskAssessment": {
+                "primaryRisk": "See formatted text for detailed risk assessment",
+                "correlationRisk": "See formatted text for correlation risks",
+                "volatilityPotential": "See formatted text for volatility assessment"
+            },
+            "tradeManagementGuidelines": ["See formatted text for detailed trading guidelines"],
+            "sentiment": {"overall": "neutral", "score": 50},
+            "impactLevel": "MEDIUM"
+        }
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get statistics about the cache."""

@@ -429,7 +429,7 @@ async def summarize_news(
             )
             
             # Track comprehensive Langfuse metrics
-            if trace:
+            if langfuse_monitor.enabled:
                 try:
                     # Estimate token usage
                     prompt_tokens = 0
@@ -472,8 +472,14 @@ async def summarize_news(
                         input=request.query,  # Pass input as separate parameter
                         output=summary_output  # Pass output as separate parameter
                     )
+                    
+                    # Explicitly flush data to ensure it's sent
+                    logger.info("Explicitly flushing Langfuse data")
+                    langfuse_monitor.flush()
                 except Exception as e:
                     logger.warning(f"Error tracking Langfuse metrics: {e}")
+                    import traceback
+                    logger.warning(f"Langfuse metrics error traceback: {traceback.format_exc()}")
             
             # Track standard metrics
             monitor.track_metric("summary_generation_time", summary_duration, {
@@ -621,7 +627,8 @@ async def root():
             "search": "/search",
             "stats": "/documents/stats",
             "summarize": "/summarize",
-            "monitoring": "/monitoring"
+            "monitoring": "/monitoring",
+            "langfuse_test": "/langfuse-debug"
         }
     }
 
@@ -695,6 +702,47 @@ async def performance_metrics():
             "status": "error",
             "error": str(e),
             "timestamp": datetime.now().isoformat()
+        }
+
+# Import the Langfuse debugging endpoint
+from langfuse_test_endpoint import router as langfuse_test_router
+
+# Add the Langfuse testing router
+app.include_router(langfuse_test_router, prefix="/langfuse-debug", tags=["diagnostics"])
+
+# Add a direct endpoint for even more detailed Langfuse debugging
+@app.get("/langfuse-direct-test")
+async def langfuse_direct_test():
+    """Directly test Langfuse connectivity by creating a test trace and event."""
+    try:
+        import langfuse_debug
+        
+        # Test connectivity
+        connectivity_result = langfuse_debug.test_langfuse_connectivity()
+        
+        # Test direct API call
+        direct_api_result = langfuse_debug.test_direct_trace_creation()
+        
+        # Compile results
+        return {
+            "status": "completed",
+            "timestamp": datetime.now().isoformat(),
+            "connectivity": connectivity_result,
+            "direct_api": direct_api_result,
+            "environment_variables": {
+                "LANGFUSE_HOST": os.getenv("LANGFUSE_HOST"),
+                "LANGFUSE_PUBLIC_KEY_EXISTS": bool(os.getenv("LANGFUSE_PUBLIC_KEY")),
+                "LANGFUSE_SECRET_KEY_EXISTS": bool(os.getenv("LANGFUSE_SECRET_KEY")),
+                "PROJECT_NAME": os.getenv("PROJECT_NAME", "newsragnarok")
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error in direct Langfuse test: {e}")
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
         }
 
 if __name__ == "__main__":

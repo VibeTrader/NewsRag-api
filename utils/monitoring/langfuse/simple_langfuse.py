@@ -77,12 +77,43 @@ class SimpleLangfuseMonitor:
         else:
             # Initialize Langfuse client
             try:
+                # Add explicit debugging
+                logger.info(f"Initializing Langfuse client with host: {self.langfuse_host}")
+                logger.info(f"Using project name: {self.project_name}")
+                
+                # Check SDK version to use appropriate initialization
+                try:
+                    import importlib.metadata
+                    langfuse_version = importlib.metadata.version("langfuse")
+                    logger.info(f"Initializing with Langfuse SDK version: {langfuse_version}")
+                except Exception as version_error:
+                    logger.warning(f"Could not determine Langfuse version: {version_error}")
+                    langfuse_version = "unknown"
+                
+                # Initialize with timeout and project name
                 self.langfuse = Langfuse(
                     secret_key=self.langfuse_secret_key,
                     public_key=self.langfuse_public_key,
-                    host=self.langfuse_host
+                    host=self.langfuse_host,
+                    project_name=self.project_name,  # Explicitly set project name
+                    timeout=30  # Add timeout to prevent hanging
                 )
-                self.enabled = True
+                
+                # Test connection with simple API call
+                try:
+                    # Try to create a simple event to verify connectivity
+                    test_id = self.langfuse.create_event(
+                        name="initialization_test",
+                        metadata={"timestamp": datetime.now().isoformat()}
+                    )
+                    self.langfuse.flush()  # Force flush to verify connectivity
+                    logger.info(f"Langfuse connectivity test successful: {test_id}")
+                    self.enabled = True
+                except Exception as conn_error:
+                    logger.error(f"Langfuse connectivity test failed: {conn_error}")
+                    # Continue with client initialized but mark with warning
+                    self.enabled = True
+                    
                 logger.info("Simple Langfuse monitoring initialized")
             except Exception as e:
                 logger.error(f"Error initializing Langfuse: {e}")
@@ -202,11 +233,26 @@ class SimpleLangfuseMonitor:
             # Add additional metadata if provided
             if metadata:
                 meta.update(metadata)
-            
-            # Create trace with input/output if available
-            if hasattr(self.langfuse, "create_trace"):
-                # Try using native create_trace method if available
-                try:
+                
+            # Check which API method to use based on Langfuse version
+            try:
+                # First try the newer trace creation method with input/output
+                if hasattr(self.langfuse, "trace"):
+                    # Langfuse v3.x uses this method
+                    trace = self.langfuse.trace(
+                        id=trace_id,
+                        name=name or "unnamed_trace",
+                        metadata=meta,
+                        tags=tags or [],
+                        user_id=user_id,
+                        session_id=session_id,
+                        input=input,
+                        output=output
+                    )
+                    logger.info(f"Created trace using trace() method: {trace_id}")
+                    return trace_id
+                elif hasattr(self.langfuse, "create_trace"):
+                    # Try using standard create_trace method
                     self.langfuse.create_trace(
                         id=trace_id,
                         name=name or "unnamed_trace",
@@ -217,23 +263,47 @@ class SimpleLangfuseMonitor:
                         input=input,
                         output=output
                     )
+                    logger.info(f"Created trace using create_trace() method: {trace_id}")
                     return trace_id
-                except Exception as e:
-                    logger.warning(f"Native create_trace failed, falling back to create_event: {e}")
-            
-            # Fallback to create_event
-            event_data = {
-                "name": f"trace:{name or 'unnamed'}",
-                "metadata": meta
-            }
-            
-            # Add input and output if provided
-            if input is not None:
-                event_data["input"] = input
-            if output is not None:
-                event_data["output"] = output
+                else:
+                    # Fallback to event-based approach
+                    logger.info("Trace methods not available, using event-based approach")
+                    self.langfuse.create_event(
+                        name=f"trace:{name or 'unnamed'}",
+                        metadata=meta
+                    )
+                    logger.info(f"Created trace as event: {trace_id}")
+                    return trace_id
+            except Exception as e:
+                logger.warning(f"Error using primary trace methods: {e}, falling back to create_observation")
                 
-            self.langfuse.create_observation(**event_data)
+                # Fallback to create_observation
+                event_data = {
+                    "id": trace_id,
+                    "name": f"trace:{name or 'unnamed'}",
+                    "metadata": meta
+                }
+                
+                # Add input and output if provided
+                if input is not None:
+                    event_data["input"] = input
+                if output is not None:
+                    event_data["output"] = output
+                    
+                try:
+                    self.langfuse.create_observation(**event_data)
+                    logger.info(f"Created trace using create_observation: {trace_id}")
+                except Exception as inner_e:
+                    logger.error(f"Error using create_observation fallback: {inner_e}")
+                    # Final fallback - create event
+                    try:
+                        self.langfuse.create_event(
+                            name=f"trace:{name or 'unnamed'}",
+                            metadata=meta
+                        )
+                        logger.info(f"Created trace as event (final fallback): {trace_id}")
+                    except Exception as final_e:
+                        logger.error(f"All trace creation methods failed: {final_e}")
             
             logger.info(f"Created trace in Langfuse: {name}")
             return trace_id
@@ -266,30 +336,57 @@ class SimpleLangfuseMonitor:
             if output is None and metadata and "output" in metadata:
                 output = metadata.pop("output")
             
-            # Create the observation directly with input/output fields
+            # Prepare common observation data
+            observation_data = {
+                "id": span_id,
+                "name": name,
+                "type": "span",
+                "metadata": metadata or {},
+                "trace_id": trace_id,
+                "status": status,
+            }
+            
+            # Add input/output if available
+            if input is not None:
+                observation_data["input"] = input
+            if output is not None:
+                observation_data["output"] = output
+            
+            # Try different methods based on what's available in the SDK version
             try:
-                # Try to use native span method if available
-                observation_data = {
-                    "id": span_id,
-                    "name": name,
-                    "type": "span",
-                    "metadata": metadata or {},
-                    "trace_id": trace_id,
-                    "status": status,
-                }
-                
-                # Add input/output if available
-                if input is not None:
-                    observation_data["input"] = input
-                if output is not None:
-                    observation_data["output"] = output
+                # Try the observation method
+                if hasattr(self.langfuse, "observation"):
+                    self.langfuse.observation(**observation_data)
+                    logger.info(f"Created span using observation method: {name}")
+                    return span_id
                     
-                # Create the observation
-                self.langfuse.create_observation(**observation_data)
-                
+                # Try the span method directly
+                elif hasattr(self.langfuse, "span"):
+                    self.langfuse.span(**observation_data)
+                    logger.info(f"Created span using span method: {name}")
+                    return span_id
+                    
+                # Try create_observation
+                elif hasattr(self.langfuse, "create_observation"):
+                    self.langfuse.create_observation(**observation_data)
+                    logger.info(f"Created span using create_observation: {name}")
+                    return span_id
+                    
+                # Fallback to create_span
+                elif hasattr(self.langfuse, "create_span"):
+                    self.langfuse.create_span(**observation_data)
+                    logger.info(f"Created span using create_span: {name}")
+                    return span_id
+                    
+                else:
+                    # No span-specific methods available, fallback to events
+                    logger.warning("No span methods available in Langfuse SDK, falling back to events")
+                    raise ValueError("No span methods available")
+                    
             except Exception as e:
-                logger.warning(f"Error using create_observation, falling back to create_event: {e}")
-                # Fallback to create_event
+                logger.warning(f"Error using primary span methods: {e}, falling back to create_event")
+                
+                # Fallback to create_event with span-like structure
                 event_data = {
                     "name": f"span:{name}",
                     "metadata": {
@@ -298,9 +395,7 @@ class SimpleLangfuseMonitor:
                         "span_name": name,
                         "status": status,
                         "timestamp": datetime.now().isoformat(),
-                        "source": "newsrag_api",
-                        "input": input,
-                        "output": output
+                        "source": "newsrag_api"
                     }
                 }
                 
@@ -308,7 +403,14 @@ class SimpleLangfuseMonitor:
                 if metadata:
                     event_data["metadata"].update(metadata)
                     
+                # Add input/output as metadata since events don't support them directly
+                if input is not None:
+                    event_data["metadata"]["input"] = str(input)[:500]  # Truncate to avoid oversized events
+                if output is not None:
+                    event_data["metadata"]["output"] = str(output)[:500]  # Truncate to avoid oversized events
+                
                 self.langfuse.create_event(**event_data)
+                logger.info(f"Created span as event (fallback): {name}")
             
             logger.info(f"Tracked span in Langfuse: {name}")
             return span_id
@@ -385,10 +487,47 @@ class SimpleLangfuseMonitor:
         """Flush any pending observations to Langfuse."""
         if self.enabled and self.langfuse:
             try:
-                self.langfuse.flush()
+                # Add more detailed logging
+                logger.info("Starting Langfuse data flush operation...")
+                
+                # Try the standard flush method first
+                if hasattr(self.langfuse, "flush"):
+                    self.langfuse.flush()
+                    logger.info("Flushed data to Langfuse using flush() method")
+                # Some versions might use different methods
+                elif hasattr(self.langfuse, "_flush"):
+                    self.langfuse._flush()
+                    logger.info("Flushed data to Langfuse using _flush() method")
+                # Try client.flush if available
+                elif hasattr(self.langfuse, "client") and hasattr(self.langfuse.client, "flush"):
+                    self.langfuse.client.flush()
+                    logger.info("Flushed data to Langfuse using client.flush() method")
+                else:
+                    # No explicit flush method available
+                    logger.warning("No flush method available in Langfuse SDK")
+                
+                # Force network operations to complete by adding a small delay
+                import time
+                time.sleep(0.5)  # 500ms delay to ensure network operations complete
+                
                 logger.info("Flushed data to Langfuse")
             except Exception as e:
+                import traceback
                 logger.error(f"Error flushing data to Langfuse: {e}")
+                logger.error(f"Error type: {type(e)}")
+                logger.error(f"Error traceback: {traceback.format_exc()}")
+                
+                # Try to diagnose network issues
+                try:
+                    import requests
+                    response = requests.get(
+                        f"{self.langfuse_host}/api/health", 
+                        timeout=3,
+                        headers={"Accept": "application/json"}
+                    )
+                    logger.info(f"Langfuse health check during error: Status {response.status_code}")
+                except Exception as network_error:
+                    logger.error(f"Network connectivity issue with Langfuse: {network_error}")
                 
     def test_connection(self):
         """Test the connection to Langfuse."""

@@ -302,9 +302,17 @@ class LangChainForexSummarizer:
                             input=query,
                             output="Retrieved from cache"
                         )
-                        # Update trace with output
-                        langchain_monitoring.langfuse_monitor.langfuse.update_trace(
-                            trace_id=trace_id,
+                        
+                        # Update trace with output using track_span instead of update_trace
+                        langchain_monitoring.langfuse_monitor.track_span(
+                            trace=trace_id,
+                            name="cache_result",
+                            metadata={
+                                "from_cache": True,
+                                "cache_key": cache_key
+                            },
+                            status="success",
+                            input=query,
                             output=cached_result.get("formatted_text", cached_result.get("summary", ""))
                         )
                     except Exception as e:
@@ -561,10 +569,10 @@ class LangChainForexSummarizer:
             # Update trace in Langfuse with final result
             if trace_id and langchain_monitoring and langchain_monitoring.langfuse_monitor:
                 try:
-                    # Update trace with output
-                    langchain_monitoring.langfuse_monitor.langfuse.update_trace(
-                        trace_id=trace_id,
-                        output=summary_text,
+                    # Use track_span instead of update_trace (which doesn't exist in some SDK versions)
+                    langchain_monitoring.langfuse_monitor.track_span(
+                        trace=trace_id,
+                        name="summarization_metrics",
                         metadata={
                             "processing_time_ms": duration_ms,
                             "token_usage": token_usage,
@@ -572,7 +580,10 @@ class LangChainForexSummarizer:
                             "sentiment_score": parsed_result.get("sentiment", {}).get("score", 0),
                             "impact_level": parsed_result.get("impactLevel", "UNKNOWN"),
                             "article_count": len(articles)
-                        }
+                        },
+                        status="success",
+                        input=query,
+                        output=summary_text
                     )
                 except Exception as e:
                     logger.warning(f"Error updating Langfuse trace: {e}")

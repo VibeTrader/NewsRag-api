@@ -34,11 +34,11 @@ output "us_endpoint_id" {
 }
 
 output "europe_endpoint_id" {
-  description = "ID of Europe endpoint (if created)"
-  value       = var.europe_app_service_id != null ? azurerm_traffic_manager_azure_endpoint.europe[0].id : null
+  description = "ID of Europe endpoint"
+  value       = azurerm_traffic_manager_azure_endpoint.europe.id
 }
 
 output "india_endpoint_id" {
-  description = "ID of India endpoint (if created)"
-  value       = var.india_app_service_id != null ? azurerm_traffic_manager_azure_endpoint.india[0].id : null
+  description = "ID of India endpoint"
+  value       = azurerm_traffic_manager_azure_endpoint.india.id
 }

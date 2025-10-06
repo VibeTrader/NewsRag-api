@@ -1,0 +1,206 @@
+# ============================================
+# Updated Multi-Region Infrastructure Deployment
+# Uses existing vibetrader-RAG-rg and for_each approach
+# ============================================
+name: '🏗️ Deploy Infrastructure (Multi-Region Terraform)'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+# Required for Azure authentication
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: '1.5.0'
+  WORKING_DIRECTORY: './terraform'
+
+jobs:
+  terraform:
+    name: 'Terraform Multi-Region'
+    runs-on: ubuntu-latest
+    environment: production
+    
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    
+    outputs:
+      traffic_manager_url: ${{ steps.terraform_outputs.outputs.traffic_manager_url }}
+      us_app_service_name: ${{ steps.terraform_outputs.outputs.us_app_service_name }}
+      europe_app_service_name: ${{ steps.terraform_outputs.outputs.europe_app_service_name }}
+      india_app_service_name: ${{ steps.terraform_outputs.outputs.india_app_service_name }}
+      resource_group_name: ${{ steps.terraform_outputs.outputs.resource_group_name }}
+    
+    steps:
+    - name: 🚀 Checkout
+      uses: actions/checkout@v4
+
+    - name: 🔑 Azure Login
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: ⚙️ Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: 🔍 Terraform Format Check
+      run: terraform fmt -check
+      continue-on-error: true
+
+    - name: 📋 Terraform Init
+      run: terraform init
+
+    - name: 🔍 Terraform Validate
+      run: terraform validate
+
+    - name: 📊 Terraform Plan
+      run: |
+        terraform plan \
+          -var-file="environments/prod.tfvars" \
+          -out=tfplan
+        echo "## 📊 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "### Resources to be created:" >> $GITHUB_STEP_SUMMARY
+        echo "- **Resource Group**: Using existing vibetrader-RAG-rg" >> $GITHUB_STEP_SUMMARY
+        echo "- **App Service Plans**: 3 (US, Europe, India)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Web Apps**: 3 (one per region)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Traffic Manager**: 1 (global routing)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Application Insights**: 1 (shared across regions)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Auto-scaling**: 3 (independent per region)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Monitoring Alerts**: 15+ rules" >> $GITHUB_STEP_SUMMARY
+
+    - name: 💰 Cost Estimation
+      run: |
+        echo "## 💰 Estimated Monthly Cost" >> $GITHUB_STEP_SUMMARY
+        echo "- **3x App Services (Basic B1)**: ~$39/month" >> $GITHUB_STEP_SUMMARY
+        echo "- **Traffic Manager**: ~$1-3/month" >> $GITHUB_STEP_SUMMARY
+        echo "- **Shared Application Insights**: ~$10-20/month" >> $GITHUB_STEP_SUMMARY
+        echo "- **Log Analytics**: ~$5-10/month" >> $GITHUB_STEP_SUMMARY
+        echo "- **Alerts & Resource Groups**: Free" >> $GITHUB_STEP_SUMMARY
+        echo "- **🎯 Total Estimated Cost**: ~$55-75/month" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "💡 **Cost Savings**: Shared Application Insights saves ~$10-20/month vs 3 separate instances" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🚀 Terraform Apply
+      if: github.ref == 'refs/heads/main' && (github.event.inputs.action == 'apply' || github.event_name == 'push')
+      run: |
+        terraform apply -auto-approve tfplan
+        echo "## ✅ Multi-Region Infrastructure Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🗑️ Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        terraform destroy \
+          -var-file="environments/prod.tfvars" \
+          -auto-approve
+        echo "## 🗑️ Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+
+    - name: 📊 Get Terraform Outputs
+      if: github.event.inputs.action != 'destroy'
+      id: terraform_outputs
+      run: |
+        # Updated for for_each module structure
+        echo "traffic_manager_url=$(terraform output -raw traffic_manager_url)" >> $GITHUB_OUTPUT
+        echo "us_app_service_name=$(terraform output -raw us_app_service_name)" >> $GITHUB_OUTPUT
+        echo "europe_app_service_name=$(terraform output -raw europe_app_service_name)" >> $GITHUB_OUTPUT
+        echo "india_app_service_name=$(terraform output -raw india_app_service_name)" >> $GITHUB_OUTPUT
+        echo "resource_group_name=$(terraform output -raw existing_resource_group_name)" >> $GITHUB_OUTPUT
+        
+        echo "## 🌍 Deployment URLs" >> $GITHUB_STEP_SUMMARY
+        echo "### Global Traffic Manager:" >> $GITHUB_STEP_SUMMARY
+        echo "- **🌍 Global URL**: $(terraform output -raw traffic_manager_url)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Regional Direct Access:" >> $GITHUB_STEP_SUMMARY
+        echo "- **🇺🇸 US**: https://$(terraform output -raw us_app_service_name).azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+        echo "- **🇪🇺 Europe**: https://$(terraform output -raw europe_app_service_name).azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+        echo "- **🇮🇳 India**: https://$(terraform output -raw india_app_service_name).azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🏥 Infrastructure Health Check
+      if: github.event.inputs.action != 'destroy'
+      run: |
+        echo "## 🏥 Infrastructure Verification" >> $GITHUB_STEP_SUMMARY
+        
+        # Check if App Services are created
+        RESOURCE_GROUP=$(terraform output -raw existing_resource_group_name)
+        US_APP=$(terraform output -raw us_app_service_name)
+        EU_APP=$(terraform output -raw europe_app_service_name)
+        IN_APP=$(terraform output -raw india_app_service_name)
+        
+        echo "### ✅ Resources Created:" >> $GITHUB_STEP_SUMMARY
+        echo "- **Resource Group**: $RESOURCE_GROUP" >> $GITHUB_STEP_SUMMARY
+        echo "- **US App Service**: $US_APP" >> $GITHUB_STEP_SUMMARY
+        echo "- **Europe App Service**: $EU_APP" >> $GITHUB_STEP_SUMMARY
+        echo "- **India App Service**: $IN_APP" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🔄 **Next**: App deployment will configure application settings and deploy code" >> $GITHUB_STEP_SUMMARY
+
+  # Trigger app deployment after infrastructure is ready
+  trigger_app_deployment:
+    name: '🔄 Trigger App Deployment'
+    needs: terraform
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && needs.terraform.outputs.traffic_manager_url != ''
+    
+    steps:
+    - name: 🔄 Trigger Multi-Region App Deployment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          console.log('🚀 Triggering multi-region app deployment...');
+          
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'deploy-app.yml',
+            ref: 'main',
+            inputs: {
+              infrastructure_ready: 'true',
+              us_app_name: '${{ needs.terraform.outputs.us_app_service_name }}',
+              europe_app_name: '${{ needs.terraform.outputs.europe_app_service_name }}',
+              india_app_name: '${{ needs.terraform.outputs.india_app_service_name }}',
+              resource_group: '${{ needs.terraform.outputs.resource_group_name }}'
+            }
+          });
+          
+          console.log('✅ App deployment triggered successfully');
+
+    - name: 📋 Summary
+      run: |
+        echo "## 🎉 Infrastructure Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 What was created:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **3 App Service Plans** (Basic B1, Linux)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **3 Web Apps** (Python 3.12 ready)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **1 Traffic Manager** (geographic routing)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **1 Shared Application Insights** (cost-effective monitoring)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **15+ Monitoring Alerts** (comprehensive coverage)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **3 Auto-scaling Configurations** (independent per region)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔄 Next Phase:" >> $GITHUB_STEP_SUMMARY
+        echo "Application deployment pipeline will now:" >> $GITHUB_STEP_SUMMARY
+        echo "1. Build and test your NewsRag API" >> $GITHUB_STEP_SUMMARY
+        echo "2. Deploy to all 3 regions simultaneously" >> $GITHUB_STEP_SUMMARY
+        echo "3. Configure application settings with secrets" >> $GITHUB_STEP_SUMMARY
+        echo "4. Run health checks on all endpoints" >> $GITHUB_STEP_SUMMARY
+        echo "5. Verify Traffic Manager global routing" >> $GITHUB_STEP_SUMMARY

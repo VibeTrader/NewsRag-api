@@ -1,6 +1,6 @@
 # ============================================
-# Main Terraform Configuration for NewsRaag Multi-Region Deployment  
-# Fresh deployment approach - 3 new App Services
+# Refactored Terraform Configuration for NewsRaag Multi-Region Deployment  
+# Uses existing vibetrader-RAG-rg resource group with for_each loops
 # ============================================
 
 terraform {
@@ -20,11 +20,17 @@ provider "azurerm" {
 # Data sources
 data "azurerm_client_config" "current" {}
 
+# Use existing resource group instead of creating new one
+data "azurerm_resource_group" "existing" {
+  name = "vibetrader-RAG-rg"
+}
+
 # Local values for consistent naming
 locals {
   project_name = "newsraag"
   environment  = var.environment
   
+  # Define all regions in one place
   regions = {
     us = {
       location      = "East US"
@@ -50,37 +56,53 @@ locals {
   }
 }
 
-# Resource Group for global resources (Traffic Manager, shared monitoring)
-resource "azurerm_resource_group" "global" {
-  name     = "rg-${local.project_name}-global-${local.environment}"
-  location = "East US"
-  tags     = local.common_tags
+# Shared Log Analytics Workspace for all regions
+resource "azurerm_log_analytics_workspace" "shared" {
+  name                = "logs-${local.project_name}-shared-${local.environment}"
+  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = data.azurerm_resource_group.existing.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  
+  tags = local.common_tags
 }
 
-# Data source for existing Application Insights (we'll use your existing one)
-data "azurerm_application_insights" "existing" {
-  name                = var.existing_application_insights_name
-  resource_group_name = var.existing_application_insights_rg
+# Shared Application Insights for all 3 regions
+resource "azurerm_application_insights" "shared" {
+  name                = "insights-${local.project_name}-shared-${local.environment}"
+  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = data.azurerm_resource_group.existing.name
+  workspace_id        = azurerm_log_analytics_workspace.shared.id
+  application_type    = "web"
+  
+  tags = local.common_tags
 }
 
-# Deploy US App Service
-module "app_service_us" {
+# Deploy App Services for all regions using for_each
+module "app_services" {
   source = "./modules/app-service"
+  
+  # Loop through all regions
+  for_each = local.regions
   
   project_name     = local.project_name
   environment      = local.environment
-  region           = local.regions.us
+  region           = each.value  # Pass the region object (location, short_name)
   
-  # App Service configuration - Basic tier for now
+  # Use existing resource group
+  existing_resource_group_name     = data.azurerm_resource_group.existing.name
+  existing_resource_group_location = data.azurerm_resource_group.existing.location
+  
+  # App Service configuration - Basic tier
   app_service_plan_sku  = var.app_service_plan_sku
   app_service_plan_tier = var.app_service_plan_tier
-  min_instances        = var.min_instances
-  max_instances        = var.max_instances
+  min_instances         = var.min_instances
+  max_instances         = var.max_instances
   
-  # Use existing Application Insights
-  application_insights_id                = data.azurerm_application_insights.existing.id
-  application_insights_instrumentation_key = data.azurerm_application_insights.existing.instrumentation_key
-  application_insights_connection_string = data.azurerm_application_insights.existing.connection_string
+  # Use shared Application Insights
+  application_insights_id                = azurerm_application_insights.shared.id
+  application_insights_instrumentation_key = azurerm_application_insights.shared.instrumentation_key
+  application_insights_connection_string = azurerm_application_insights.shared.connection_string
   
   # Application configuration
   app_settings = var.app_settings
@@ -88,78 +110,29 @@ module "app_service_us" {
   common_tags = local.common_tags
 }
 
-# Deploy Europe App Service
-module "app_service_europe" {
-  source = "./modules/app-service"
-  
-  project_name     = local.project_name
-  environment      = local.environment
-  region           = local.regions.europe
-  
-  # App Service configuration - Basic tier for now
-  app_service_plan_sku  = var.app_service_plan_sku
-  app_service_plan_tier = var.app_service_plan_tier
-  min_instances        = var.min_instances
-  max_instances        = var.max_instances
-  
-  # Use existing Application Insights
-  application_insights_id                = data.azurerm_application_insights.existing.id
-  application_insights_instrumentation_key = data.azurerm_application_insights.existing.instrumentation_key
-  application_insights_connection_string = data.azurerm_application_insights.existing.connection_string
-  
-  # Application configuration
-  app_settings = var.app_settings
-  
-  common_tags = local.common_tags
-}
-
-# Deploy India App Service
-module "app_service_india" {
-  source = "./modules/app-service"
-  
-  project_name     = local.project_name
-  environment      = local.environment
-  region           = local.regions.india
-  
-  # App Service configuration - Basic tier for now
-  app_service_plan_sku  = var.app_service_plan_sku
-  app_service_plan_tier = var.app_service_plan_tier
-  min_instances        = var.min_instances
-  max_instances        = var.max_instances
-  
-  # Use existing Application Insights
-  application_insights_id                = data.azurerm_application_insights.existing.id
-  application_insights_instrumentation_key = data.azurerm_application_insights.existing.instrumentation_key
-  application_insights_connection_string = data.azurerm_application_insights.existing.connection_string
-  
-  # Application configuration
-  app_settings = var.app_settings
-  
-  common_tags = local.common_tags
-}
 # Traffic Manager for global load balancing
 module "traffic_manager" {
   source = "./modules/traffic-manager"
   
   project_name         = local.project_name
   environment          = local.environment
-  resource_group_name  = azurerm_resource_group.global.name
+  resource_group_name  = data.azurerm_resource_group.existing.name
   
-  # All three app service endpoints
-  existing_app_service_id   = module.app_service_us.app_service_id
-  existing_app_service_name = module.app_service_us.app_service_name
+  # Pass all app service endpoints dynamically
+  existing_app_service_id   = module.app_services["us"].app_service_id
+  existing_app_service_name = module.app_services["us"].app_service_name
   
-  europe_app_service_id   = module.app_service_europe.app_service_id
-  europe_app_service_name = module.app_service_europe.app_service_name
+  europe_app_service_id   = module.app_services["europe"].app_service_id
+  europe_app_service_name = module.app_services["europe"].app_service_name
   
-  india_app_service_id   = module.app_service_india.app_service_id
-  india_app_service_name = module.app_service_india.app_service_name
+  india_app_service_id   = module.app_services["india"].app_service_id
+  india_app_service_name = module.app_services["india"].app_service_name
   
   # Health check configuration
   health_check_path = var.health_check_path
   
-  # Use existing Application Insights for availability tests
-  application_insights_id = data.azurerm_application_insights.existing.id
+  # Use shared Application Insights for availability tests
+  application_insights_id = azurerm_application_insights.shared.id
   
   common_tags = local.common_tags
 }
@@ -170,27 +143,17 @@ module "monitoring" {
   
   project_name         = local.project_name
   environment          = local.environment
-  resource_group_name  = azurerm_resource_group.global.name
+  resource_group_name  = data.azurerm_resource_group.existing.name
   
-  # Use existing Application Insights
-  application_insights_id = data.azurerm_application_insights.existing.id
+  # Use shared Application Insights
+  application_insights_id = azurerm_application_insights.shared.id
   
-  # All app services to monitor
+  # Build app_services map dynamically from for_each results
   app_services = {
-    us = {
-      id     = module.app_service_us.app_service_id
-      name   = module.app_service_us.app_service_name
-      region = "us"
-    }
-    europe = {
-      id     = module.app_service_europe.app_service_id
-      name   = module.app_service_europe.app_service_name
-      region = "europe"
-    }
-    india = {
-      id     = module.app_service_india.app_service_id
-      name   = module.app_service_india.app_service_name
-      region = "india"
+    for region_key, region_config in local.regions : region_key => {
+      id     = module.app_services[region_key].app_service_id
+      name   = module.app_services[region_key].app_service_name
+      region = region_key
     }
   }
   

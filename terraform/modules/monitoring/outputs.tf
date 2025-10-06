@@ -19,7 +19,7 @@ output "alert_ids" {
     error_rate_alerts   = { for k, v in azurerm_monitor_metric_alert.high_error_rate : k => v.id }
     cpu_alerts          = { for k, v in azurerm_monitor_metric_alert.high_cpu : k => v.id }
     memory_alerts       = { for k, v in azurerm_monitor_metric_alert.high_memory : k => v.id }
-    availability_alert  = var.application_insights_id != null ? azurerm_monitor_metric_alert.availability[0].id : null
+    availability_alert  = azurerm_monitor_metric_alert.availability.id
   }
 }
 

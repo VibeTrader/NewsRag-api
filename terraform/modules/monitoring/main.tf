@@ -15,7 +15,7 @@ terraform {
 resource "azurerm_monitor_action_group" "main" {
   name                = "ag-${var.project_name}-${var.environment}"
   resource_group_name = var.resource_group_name
-  short_name          = "newsraag"
+  short_name          = "newsrag"
   
   # Email notifications
   email_receiver {
@@ -149,10 +149,8 @@ resource "azurerm_monitor_metric_alert" "high_memory" {
   tags = var.common_tags
 }
 
-# Availability Alert (for Traffic Manager)
+# Availability Alert (for global Application Insights)
 resource "azurerm_monitor_metric_alert" "availability" {
-  count = var.application_insights_id != null ? 1 : 0
-  
   name                = "alert-availability-${var.project_name}-${var.environment}"
   resource_group_name = var.resource_group_name
   scopes              = [var.application_insights_id]

@@ -1,0 +1,91 @@
+# ============================================
+# Development Environment Configuration Template
+# This is a TEMPLATE file - copy to dev.tfvars and add your actual values
+# ============================================
+
+# Environment configuration
+environment = "dev"
+
+# App Service tier configuration (cheaper for development)
+app_service_plan_sku  = "F1"    # Free tier for development
+app_service_plan_tier = "Free"
+
+# Scaling configuration (Free tier doesn't support auto-scaling)
+min_instances = 1
+max_instances = 1
+
+# Health check endpoint
+health_check_path = "/health"
+
+# Alert configuration for development
+alert_email = "your-dev-email@yourdomain.com"  # CHANGE THIS
+slack_webhook_url = ""  # Optional for development
+
+# Log Analytics retention (shorter for dev to save costs)
+log_retention_days = 7
+
+# Application Settings for Development
+app_settings = {
+  # ============================================
+  # Platform Settings (managed by Terraform/Azure)
+  # ============================================
+  WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
+  WEBSITES_PORT                       = "8000"
+  SCM_DO_BUILD_DURING_DEPLOYMENT      = "true"
+  ENABLE_ORYX_BUILD                   = "true"
+  
+  # Python configuration
+  PYTHON_VERSION     = "3.12"
+  PYTHONUNBUFFERED   = "1"
+  PORT               = "8000"
+  
+  # Application environment
+  ENVIRONMENT = "development"
+  
+  # FastAPI specific
+  API_HOST = "0.0.0.0"
+  API_PORT = "8000"
+  
+  # Health check
+  HEALTH_CHECK_ENABLED = "true"
+  
+  # ============================================
+  # Development-specific Configuration
+  # ============================================
+  
+  # Azure OpenAI Configuration (development values)
+  AZURE_OPENAI_API_VERSION         = "2024-02-01"
+  AZURE_OPENAI_DEPLOYMENT          = "your-dev-gpt-deployment"       # CHANGE THIS
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT = "your-dev-embedding-deployment" # CHANGE THIS
+  AZURE_OPENAI_EMBEDDING_MODEL     = "text-embedding-3-large"
+  
+  # Embedding Configuration
+  EMBEDDING_DIMENSION = "3072"
+  
+  # Qdrant Configuration (development)
+  QDRANT_COLLECTION_NAME = "news_articles_dev"  # Separate dev collection
+  
+  # Azure Storage Configuration (development)
+  AZ_ACCOUNT_NAME    = "your-dev-storage-account"    # CHANGE THIS
+  AZ_CONTAINER_NAME  = "dev-container"               # CHANGE THIS
+  
+  # Cache Configuration (shorter for dev)
+  CACHE_TTL           = "300"       # 5 minutes
+  SUMMARY_CACHE_SIZE  = "100"       # Smaller cache
+  SUMMARY_CACHE_TTL   = "300"       # 5 minutes
+  
+  # Article Processing (smaller limits for dev)
+  DEFAULT_ARTICLE_LIMIT     = "10"       # Smaller for development
+  MAX_ARTICLE_CONTENT_CHARS = "5000"     # Smaller for development  
+  MAX_CHUNK_SIZE           = "500"       # Smaller chunks
+  
+  # Development debugging
+  DEBUG_MODE = "true"
+  LOG_LEVEL  = "DEBUG"
+}
+
+# ============================================
+# Note: This creates a single-region deployment for development
+# To deploy all 3 regions for dev, change the environment name
+# and run: terraform apply -var-file="environments/dev.tfvars"
+# ============================================

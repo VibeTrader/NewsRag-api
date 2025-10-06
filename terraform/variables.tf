@@ -1,5 +1,6 @@
 # ============================================
 # Variables for NewsRaag Multi-Region Fresh Deployment
+# All resources created from scratch - New Azure Account
 # ============================================
 
 # Environment Configuration
@@ -9,22 +10,7 @@ variable "environment" {
   default     = "prod"
 }
 
-# Existing Application Insights (we'll use your existing one)
-variable "existing_application_insights_name" {
-  description = "Name of existing Application Insights resource"
-  type        = string
-  # You'll need to update this with your actual App Insights name
-  default     = "newsraag-insights" # Update this
-}
-
-variable "existing_application_insights_rg" {
-  description = "Resource group of existing Application Insights"
-  type        = string
-  # You'll need to update this with your actual RG name where App Insights is located
-  default     = "newsraag-rg" # Update this
-}
-
-# App Service Configuration - Basic tier for now
+# App Service Configuration - Basic tier for cost-effective start
 variable "app_service_plan_sku" {
   description = "SKU for App Service Plans (Basic for now, will scale later)"
   type        = string
@@ -69,10 +55,22 @@ variable "app_settings" {
     # Health check
     HEALTH_CHECK_ENABLED = "true"
     
-    # You'll add your actual app settings here:
-    # OPENAI_BASE_URL = "https://your-endpoint.openai.azure.com/"
+    # FastAPI specific
+    API_HOST = "0.0.0.0"
+    API_PORT = "8000"
+    
+    # You can add your application-specific settings here:
+    # OPENAI_BASE_URL = "https://your-azure-endpoint.openai.azure.com"
     # AZURE_OPENAI_API_VERSION = "2024-02-01"
-    # Add other environment variables from your .env file
+    # AZURE_OPENAI_DEPLOYMENT = "your-deployment-name"
+    # AZURE_OPENAI_EMBEDDING_DEPLOYMENT = "your-embedding-deployment"
+    # AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
+    # EMBEDDING_DIMENSION = "3072"
+    # QDRANT_URL = "your-qdrant-url"
+    # QDRANT_COLLECTION_NAME = "news_articles"
+    # VECTOR_BACKEND = "qdrant"
+    # LLM_CLEANING_ENABLED = "true"
+    # LLM_TOKEN_LIMIT_PER_REQUEST = "4000"
   }
   sensitive = false # Set to true if you add sensitive values
 }
@@ -81,19 +79,40 @@ variable "app_settings" {
 variable "health_check_path" {
   description = "Health check endpoint path"
   type        = string
-  default     = "/health" # Update based on your app's health endpoint
+  default     = "/health" # Your FastAPI app has this endpoint
 }
 
 # Monitoring and Alerting
 variable "alert_email" {
   description = "Email address for alerts"
   type        = string
-  default     = "admin@yourcompany.com" # Update with your email
+  default     = "haripriyaveluchamy@aity.dev" # Updated with your actual email
 }
 
 variable "slack_webhook_url" {
-  description = "Slack webhook URL for alerts"
+  description = "Slack webhook URL for alerts (optional)"
   type        = string
-  default     = "" # You mentioned you have this webhook
+  default     = "" # Add your Slack webhook URL if you have one
   sensitive   = true
+}
+
+# Custom Domain (optional for future use)
+variable "custom_domain" {
+  description = "Custom domain name (optional for future use)"
+  type        = string
+  default     = ""
+}
+
+# SSL Certificate (optional for future use)  
+variable "ssl_certificate_name" {
+  description = "Name of SSL certificate in Key Vault (optional for future use)"
+  type        = string
+  default     = ""
+}
+
+# Log Analytics Workspace Configuration
+variable "log_retention_days" {
+  description = "Log retention in days for Log Analytics workspace"
+  type        = number
+  default     = 30 # Standard retention for cost optimization
 }

@@ -193,9 +193,10 @@ output "regions_config" {
 # Easy-to-read region URLs
 output "region_urls_formatted" {
   description = "Formatted list of all region URLs for easy copying"
-  value = [
-    "🌍 Global: https://${module.traffic_manager.fqdn}",
+  value = concat([
+    "🌍 Global: https://${module.traffic_manager.fqdn}"
+  ], [
     for region_key, region_config in local.regions :
     "${region_key == "us" ? "🇺🇸" : region_key == "europe" ? "🇪🇺" : "🇮🇳"} ${title(region_key)} (${region_config.location}): ${module.app_services[region_key].app_service_url}"
-  ]
+  ])
 }

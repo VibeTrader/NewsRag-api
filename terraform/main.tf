@@ -129,23 +129,3 @@ module "monitoring" {
   slack_webhook_url        = var.slack_webhook_url
 }
 
-# Outputs
-output "traffic_manager_url" {
-  value = "https://${module.traffic_manager.fqdn}"
-}
-
-output "us_app_service_name" {
-  value = module.app_services["us"].app_service_name
-}
-
-output "europe_app_service_name" {
-  value = module.app_services["europe"].app_service_name
-}
-
-output "india_app_service_name" {
-  value = module.app_services["india"].app_service_name
-}
-
-output "existing_resource_group_name" {
-  value = data.azurerm_resource_group.main.name
-}

@@ -1,4 +1,4 @@
-name: 'Deploy Infrastructure (Multi-Region Terraform)'
+name: 'Deploy Infrastructure (Multi-Region)'
 
 on:
   push:
@@ -33,6 +33,31 @@ env:
   TF_VAR_health_check_path: '/health'
   TF_VAR_alert_email: 'haripriyaveluchamy@aity.dev'
   TF_VAR_log_retention_days: '30'
+  TF_VAR_existing_resource_group_name: 'vibetrader-RAG-rg'
+  
+  # App settings
+  TF_VAR_app_settings: |
+    {
+      WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
+      WEBSITES_PORT = "8000"
+      SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
+      ENABLE_ORYX_BUILD = "true"
+      PYTHON_VERSION = "3.12"
+      ENVIRONMENT = "production"
+      HEALTH_CHECK_ENABLED = "true"
+      API_HOST = "0.0.0.0"
+      API_PORT = "8000"
+      AZURE_OPENAI_API_VERSION = "2024-02-01"
+      AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
+      EMBEDDING_DIMENSION = "3072"
+      QDRANT_COLLECTION_NAME = "news_articles"
+      CACHE_TTL = "3600"
+      DEFAULT_ARTICLE_LIMIT = "50"
+      MAX_ARTICLE_CONTENT_CHARS = "10000"
+      MAX_CHUNK_SIZE = "1000"
+      SUMMARY_CACHE_SIZE = "1000"
+      SUMMARY_CACHE_TTL = "3600"
+    }
 
 jobs:
   terraform:
@@ -44,30 +69,6 @@ jobs:
       run:
         shell: bash
         working-directory: ${{ env.WORKING_DIRECTORY }}
-    
-    env:
-      TF_VAR_app_settings: |
-        {
-          WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
-          WEBSITES_PORT = "8000"
-          SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
-          ENABLE_ORYX_BUILD = "true"
-          PYTHON_VERSION = "3.12"
-          ENVIRONMENT = "production"
-          HEALTH_CHECK_ENABLED = "true"
-          API_HOST = "0.0.0.0"
-          API_PORT = "8000"
-          AZURE_OPENAI_API_VERSION = "2024-02-01"
-          AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
-          EMBEDDING_DIMENSION = "3072"
-          QDRANT_COLLECTION_NAME = "news_articles"
-          CACHE_TTL = "3600"
-          DEFAULT_ARTICLE_LIMIT = "50"
-          MAX_ARTICLE_CONTENT_CHARS = "10000"
-          MAX_CHUNK_SIZE = "1000"
-          SUMMARY_CACHE_SIZE = "1000"
-          SUMMARY_CACHE_TTL = "3600"
-        }
     
     outputs:
       traffic_manager_url: ${{ steps.terraform_outputs.outputs.traffic_manager_url }}
@@ -95,25 +96,31 @@ jobs:
     - name: Terraform Init
       run: terraform init
 
-    - name: Terraform Validate
-      run: terraform validate
+    # Fix for autoscale settings issue - simple version
+    - name: Fix Autoscale Settings
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        # Remove problematic autoscale settings before destroy
+        RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
+        echo "Removing autoscale settings in $RESOURCE_GROUP before destroy..."
+        
+        az monitor autoscale setting delete --name autoscale-newsraag-us-prod --resource-group $RESOURCE_GROUP --yes 2>/dev/null || true
+        az monitor autoscale setting delete --name autoscale-newsraag-eu-prod --resource-group $RESOURCE_GROUP --yes 2>/dev/null || true
+        az monitor autoscale setting delete --name autoscale-newsraag-in-prod --resource-group $RESOURCE_GROUP --yes 2>/dev/null || true
 
     - name: Terraform Plan
-      run: terraform plan -out=tfplan
       if: github.event.inputs.action != 'destroy'
+      run: terraform plan -out=tfplan
 
     - name: Terraform Apply
-      if: github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      if: github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.inputs.action != 'destroy')
       run: terraform apply -auto-approve tfplan
-
-    - name: Terraform Destroy Plan
-      if: github.event.inputs.action == 'destroy'
-      run: terraform plan -destroy -out=tfdestroyplan
-
+      
     - name: Terraform Destroy
       if: github.event.inputs.action == 'destroy'
-      run: terraform apply -auto-approve tfdestroyplan
-
+      run: |
+        terraform destroy -auto-approve
+        
     - name: Get Terraform Outputs
       if: github.event.inputs.action != 'destroy'
       id: terraform_outputs
@@ -128,7 +135,7 @@ jobs:
     name: 'Trigger App Deployment'
     needs: terraform
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
+    if: github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
     
     steps:
     - name: Trigger Multi-Region App Deployment

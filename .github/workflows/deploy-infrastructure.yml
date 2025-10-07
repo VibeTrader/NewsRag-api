@@ -114,12 +114,27 @@ jobs:
 
     - name: Terraform Init
       run: |
-        # Initialize with backend configuration
+        echo "Finding storage account location..."
+        
+        # Find which resource group actually contains the storage account
+        ACTUAL_STORAGE_RG=$(az storage account list --query "[?name=='tfstatevraag'].resourceGroup" --output tsv)
+        
+        if [ -z "$ACTUAL_STORAGE_RG" ]; then
+          echo "ERROR: Storage account 'tfstatevraag' not found in current subscription"
+          echo "Available storage accounts:"
+          az storage account list --query "[].{Name:name,ResourceGroup:resourceGroup}" --output table
+          exit 1
+        fi
+        
+        echo "Storage account found in resource group: $ACTUAL_STORAGE_RG"
+        
+        # Use the actual resource group for backend config
+        echo "Initializing Terraform with correct resource group..."
         terraform init \
           -backend-config="client_id=${{ secrets.AZURE_CLIENT_ID }}" \
           -backend-config="tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
           -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RG }}" \
+          -backend-config="resource_group_name=$ACTUAL_STORAGE_RG" \
           -backend-config="storage_account_name=tfstatevraag" \
           -backend-config="container_name=terraform-state" \
           -backend-config="key=newsraag-prod.tfstate" \

@@ -11,7 +11,7 @@ data "azurerm_resource_group" "main" {
 resource "azurerm_log_analytics_workspace" "shared" {
   name                = "logs-newsraag-shared-${var.environment}"
   resource_group_name = data.azurerm_resource_group.main.name
-  location            = "East US"  # Central location for logs
+  location            = data.azurerm_resource_group.main.location
   sku                 = "PerGB2018"
   retention_in_days   = var.log_retention_days
   
@@ -26,7 +26,7 @@ resource "azurerm_log_analytics_workspace" "shared" {
 resource "azurerm_application_insights" "shared" {
   name                = "insights-newsraag-shared-${var.environment}"
   resource_group_name = data.azurerm_resource_group.main.name
-  location            = "East US"  # Central location for insights
+  location            = data.azurerm_resource_group.main.location
   workspace_id        = azurerm_log_analytics_workspace.shared.id
   application_type    = "web"
   
@@ -40,35 +40,43 @@ resource "azurerm_application_insights" "shared" {
 # Multi-region app services with for_each
 module "app_services" {
   for_each = {
-    us      = { location = "East US", location_code = "us" }
-    europe  = { location = "North Europe", location_code = "eu" }
-    india   = { location = "Central India", location_code = "in" }
+    us      = { location = "East US", short_name = "us" }
+    europe  = { location = "North Europe", short_name = "eu" }
+    india   = { location = "Central India", short_name = "in" }
   }
   
   source = "./modules/app-service"
   
-  # Common parameters
-  name                  = "newsraag-${each.value.location_code}"
-  location              = each.value.location
-  environment           = var.environment
-  resource_group_name   = data.azurerm_resource_group.main.name
-  app_insights_key      = azurerm_application_insights.shared.instrumentation_key
-  app_insights_conn_str = azurerm_application_insights.shared.connection_string
+  # Required parameters matching module variables
+  project_name                              = "newsraag"
+  environment                               = var.environment
+  existing_resource_group_name              = data.azurerm_resource_group.main.name
+  existing_resource_group_location          = data.azurerm_resource_group.main.location
+  
+  # Region object as expected by module
+  region = {
+    location   = each.value.location
+    short_name = each.value.short_name
+  }
   
   # App service plan config
   app_service_plan_sku  = var.app_service_plan_sku
   app_service_plan_tier = var.app_service_plan_tier
   
   # Autoscaling settings
-  min_instances         = var.min_instances
-  max_instances         = var.max_instances
+  min_instances = var.min_instances
+  max_instances = var.max_instances
   
-  # App settings from variables
-  app_settings          = var.app_settings
-  health_check_path     = var.health_check_path
+  # App settings
+  app_settings = var.app_settings
   
-  # Tags
-  tags = {
+  # Application Insights integration
+  application_insights_id                   = azurerm_application_insights.shared.id
+  application_insights_instrumentation_key = azurerm_application_insights.shared.instrumentation_key
+  application_insights_connection_string   = azurerm_application_insights.shared.connection_string
+  
+  # Common tags
+  common_tags = {
     Environment = var.environment
     Region      = each.key
     Application = "NewsRAG API"
@@ -128,4 +136,3 @@ module "monitoring" {
   alert_email              = var.alert_email
   slack_webhook_url        = var.slack_webhook_url
 }
-

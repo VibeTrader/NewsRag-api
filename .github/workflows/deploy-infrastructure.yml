@@ -87,6 +87,25 @@ jobs:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    
+    # Set up environment variables for direct Terraform authentication
+    - name: Set Terraform Environment Variables
+      run: |
+        # Create credentials file for Terraform Azure authentication
+        echo "Setting up Azure environment variables for Terraform"
+        
+        # Export Azure credentials as environment variables
+        echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
+        echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV
+        echo "ARM_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
+        
+        # Get access token for Azure CLI authentication
+        ACCESS_TOKEN=$(az account get-access-token --query accessToken -o tsv)
+        echo "ARM_ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
+        
+        # Also get a storage-specific token
+        STORAGE_TOKEN=$(az account get-access-token --resource https://storage.azure.com/ --query accessToken -o tsv)
+        echo "ARM_SAS_TOKEN=${STORAGE_TOKEN}" >> $GITHUB_ENV
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -97,12 +116,15 @@ jobs:
       run: |
         # Initialize with backend configuration
         terraform init \
+          -backend-config="client_id=${{ secrets.AZURE_CLIENT_ID }}" \
+          -backend-config="tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+          -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
           -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RG }}" \
           -backend-config="storage_account_name=${{ secrets.TERRAFORM_STORAGE_ACCOUNT }}" \
           -backend-config="container_name=${{ secrets.TERRAFORM_CONTAINER }}" \
           -backend-config="key=newsraag-${TF_VAR_environment}.tfstate"
 
-    # Fix for autoscale settings issue - for both apply and destroy
+    # Handle autoscale settings issue - for both apply and destroy
     - name: Handle Autoscale Settings
       run: |
         # Common setup

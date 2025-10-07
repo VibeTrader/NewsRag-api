@@ -9,6 +9,12 @@ variable "environment" {
   type        = string
   default     = "prod"
 }
+variable "existing_resource_group_name" {
+  description = "Name of the existing resource group to deploy into"
+  type        = string
+  default     = "vibetrader-RAG-rg"
+  
+}
 
 # App Service Configuration - Basic tier for cost-effective start
 variable "app_service_plan_sku" {

@@ -40,7 +40,7 @@ resource "azurerm_linux_web_app" "main" {
   site_config {
     # Python 3.12 application stacks
     application_stack {
-      python_version = "3.12"
+      python_version = "3.11"
     }
     
     # FastAPI startup commands

@@ -96,21 +96,55 @@ jobs:
     - name: Terraform Init
       run: terraform init
 
-    # Fix for autoscale settings issue - simple version
-    - name: Fix Autoscale Settings
-      if: github.event.inputs.action == 'destroy'
+    # Fix for autoscale settings issue - for both apply and destroy
+    - name: Handle Autoscale Settings
       run: |
-        # Remove problematic autoscale settings before destroy
+        # Common setup
         RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
-        echo "Removing autoscale settings in $RESOURCE_GROUP before destroy..."
+        echo "Managing autoscale settings in $RESOURCE_GROUP..."
         
-        az monitor autoscale setting delete --name autoscale-newsraag-us-prod --resource-group $RESOURCE_GROUP --yes 2>/dev/null || true
-        az monitor autoscale setting delete --name autoscale-newsraag-eu-prod --resource-group $RESOURCE_GROUP --yes 2>/dev/null || true
-        az monitor autoscale setting delete --name autoscale-newsraag-in-prod --resource-group $RESOURCE_GROUP --yes 2>/dev/null || true
+        # Define regions and autoscale names
+        declare -A MODULE_PATHS=(
+          ["us"]="module.app_services[\"us\"].azurerm_monitor_autoscale_setting.main"
+          ["eu"]="module.app_services[\"europe\"].azurerm_monitor_autoscale_setting.main"
+          ["in"]="module.app_services[\"india\"].azurerm_monitor_autoscale_setting.main"
+        )
+        
+        # Check for existing autoscale settings
+        for REGION in "us" "eu" "in"; do
+          AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
+          echo "Checking for $AUTOSCALE_NAME..."
+          
+          AUTOSCALE_ID=$(az monitor autoscale setting show --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --query id -o tsv 2>/dev/null || echo "")
+          
+          if [ -n "$AUTOSCALE_ID" ]; then
+            echo "Found existing autoscale setting: $AUTOSCALE_NAME"
+            
+            if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
+              # For destroy: Delete the autoscale setting directly
+              echo "Deleting autoscale setting $AUTOSCALE_NAME before destroy..."
+              az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes
+            else
+              # For apply/plan: Import the resource into Terraform state
+              echo "Importing $AUTOSCALE_NAME into Terraform state..."
+              terraform import ${MODULE_PATHS[$REGION]} $AUTOSCALE_ID || echo "Import failed, continue anyway"
+            fi
+          else
+            echo "No existing autoscale setting found for $AUTOSCALE_NAME"
+          fi
+        done
 
     - name: Terraform Plan
       if: github.event.inputs.action != 'destroy'
-      run: terraform plan -out=tfplan
+      run: |
+        # Run plan with refresh-only first to update state with imported resources
+        echo "Refreshing Terraform state..."
+        terraform plan -refresh-only -input=false -out=tfrefresh
+        terraform apply -auto-approve tfrefresh
+        
+        # Now create the actual plan
+        echo "Creating deployment plan..."
+        terraform plan -out=tfplan
 
     - name: Terraform Apply
       if: github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.inputs.action != 'destroy')
@@ -119,7 +153,30 @@ jobs:
     - name: Terraform Destroy
       if: github.event.inputs.action == 'destroy'
       run: |
-        terraform destroy -auto-approve
+        echo "Running terraform destroy with full debug logs..."
+        
+        # Run destroy with refreshed state
+        echo "Refreshing state before destroy..."
+        terraform refresh
+        
+        # Force removal of autoscale settings again just to be safe
+        RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
+        for REGION in "us" "eu" "in"; do
+          AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
+          echo "Force removing $AUTOSCALE_NAME..."
+          az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes 2>/dev/null || echo "Already removed"
+        done
+        
+        # Run destroy with auto-approval
+        TF_LOG=DEBUG terraform destroy -auto-approve
+        
+        # Verify resources are gone
+        echo "Verifying resources have been destroyed..."
+        REMAINING_AUTOSCALE=$(az monitor autoscale setting list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'newsraag')].name" -o tsv 2>/dev/null || echo "")
+        if [ -n "$REMAINING_AUTOSCALE" ]; then
+          echo "WARNING: Some autoscale settings still exist. Forcing removal..."
+          echo $REMAINING_AUTOSCALE | xargs -r -n 1 az monitor autoscale setting delete --name --resource-group $RESOURCE_GROUP --yes
+        fi
         
     - name: Get Terraform Outputs
       if: github.event.inputs.action != 'destroy'

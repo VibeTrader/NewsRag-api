@@ -120,8 +120,8 @@ jobs:
           -backend-config="tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
           -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
           -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RG }}" \
-          -backend-config="storage_account_name=${{ secrets.TERRAFORM_STORAGE_ACCOUNT }}" \
-          -backend-config="container_name=${{ secrets.TERRAFORM_CONTAINER }}" \
+          -backend-config="storage_account_name=tfstatevraag" \
+          -backend-config="container_name=terraform-state" \
           -backend-config="key=newsraag-${TF_VAR_environment}.tfstate"
 
     # Handle autoscale settings issue - for both apply and destroy

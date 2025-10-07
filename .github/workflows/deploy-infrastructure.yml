@@ -122,7 +122,8 @@ jobs:
           -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RG }}" \
           -backend-config="storage_account_name=tfstatevraag" \
           -backend-config="container_name=terraform-state" \
-          -backend-config="key=newsraag-${TF_VAR_environment}.tfstate"
+          -backend-config="key=newsraag-prod.tfstate" \
+          -backend-config="use_azuread_auth=true"
 
     # Handle autoscale settings issue - for both apply and destroy
     - name: Handle Autoscale Settings

@@ -1,6 +1,6 @@
 # ============================================
-# Updated Multi-Region Infrastructure Deployment
-# Uses existing vibetrader-RAG-rg and for_each approach
+# Fixed Multi-Region Infrastructure Deployment
+# Uses TF_VAR environment variables (no tfvars file needed)
 # ============================================
 name: '🏗️ Deploy Infrastructure (Multi-Region Terraform)'
 
@@ -30,6 +30,17 @@ permissions:
 env:
   TF_VERSION: '1.5.0'
   WORKING_DIRECTORY: './terraform'
+  
+  # Terraform variables via environment (no tfvars file needed)
+  TF_VAR_environment: 'prod'
+  TF_VAR_app_service_plan_sku: 'B1'
+  TF_VAR_app_service_plan_tier: 'Basic'
+  TF_VAR_min_instances: '1'
+  TF_VAR_max_instances: '3'
+  TF_VAR_health_check_path: '/health'
+  TF_VAR_alert_email: 'haripriyaveluchamy@aity.dev'
+  TF_VAR_slack_webhook_url: ''
+  TF_VAR_log_retention_days: '30'
 
 jobs:
   terraform:
@@ -41,6 +52,32 @@ jobs:
       run:
         shell: bash
         working-directory: ${{ env.WORKING_DIRECTORY }}
+    
+    # Set Terraform variables from GitHub secrets
+    env:
+      # Non-sensitive app settings (can be in env vars)
+      TF_VAR_app_settings: |
+        {
+          WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
+          WEBSITES_PORT = "8000"
+          SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
+          ENABLE_ORYX_BUILD = "true"
+          PYTHON_VERSION = "3.12"
+          ENVIRONMENT = "production"
+          HEALTH_CHECK_ENABLED = "true"
+          API_HOST = "0.0.0.0"
+          API_PORT = "8000"
+          AZURE_OPENAI_API_VERSION = "2024-02-01"
+          AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
+          EMBEDDING_DIMENSION = "3072"
+          QDRANT_COLLECTION_NAME = "news_articles"
+          CACHE_TTL = "3600"
+          DEFAULT_ARTICLE_LIMIT = "50"
+          MAX_ARTICLE_CONTENT_CHARS = "10000"
+          MAX_CHUNK_SIZE = "1000"
+          SUMMARY_CACHE_SIZE = "1000"
+          SUMMARY_CACHE_TTL = "3600"
+        }
     
     outputs:
       traffic_manager_url: ${{ steps.terraform_outputs.outputs.traffic_manager_url }}
@@ -77,10 +114,19 @@ jobs:
 
     - name: 📊 Terraform Plan
       run: |
-        terraform plan \
-          -var-file="environments/prod.tfvars" \
-          -out=tfplan
-        echo "## 📊 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## 📊 Terraform Plan" >> $GITHUB_STEP_SUMMARY
+        echo "Using environment variables instead of tfvars file" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Configuration:" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment**: $TF_VAR_environment" >> $GITHUB_STEP_SUMMARY
+        echo "- **App Service Tier**: $TF_VAR_app_service_plan_sku" >> $GITHUB_STEP_SUMMARY
+        echo "- **Resource Group**: vibetrader-RAG-rg (existing)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Regions**: 3 (US, Europe, India)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Run terraform plan without tfvars file
+        terraform plan -out=tfplan
+        
         echo "### Resources to be created:" >> $GITHUB_STEP_SUMMARY
         echo "- **Resource Group**: Using existing vibetrader-RAG-rg" >> $GITHUB_STEP_SUMMARY
         echo "- **App Service Plans**: 3 (US, Europe, India)" >> $GITHUB_STEP_SUMMARY
@@ -111,9 +157,7 @@ jobs:
     - name: 🗑️ Terraform Destroy
       if: github.event.inputs.action == 'destroy'
       run: |
-        terraform destroy \
-          -var-file="environments/prod.tfvars" \
-          -auto-approve
+        terraform destroy -auto-approve
         echo "## 🗑️ Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
 
     - name: 📊 Get Terraform Outputs

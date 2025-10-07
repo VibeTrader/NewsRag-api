@@ -1,15 +1,16 @@
 # ============================================
-# App Service Module Outputs
+# Updated App Service Module Outputs
+# Uses existing resource group instead of creating new one
 # ============================================
 
 output "resource_group_name" {
-  description = "Name of the resource group"
-  value       = azurerm_resource_group.region.name
+  description = "Name of the existing resource group being used"
+  value       = var.existing_resource_group_name
 }
 
-output "resource_group_id" {
-  description = "ID of the resource group"
-  value       = azurerm_resource_group.region.id
+output "resource_group_location" {
+  description = "Location of the existing resource group"
+  value       = var.existing_resource_group_location
 }
 
 output "app_service_plan_name" {
@@ -45,4 +46,17 @@ output "app_service_hostname" {
 output "autoscale_setting_id" {
   description = "ID of the autoscale setting"
   value       = azurerm_monitor_autoscale_setting.main.id
+}
+
+output "autoscale_setting_name" {
+  description = "Name of the autoscale setting"
+  value       = azurerm_monitor_autoscale_setting.main.name
+}
+
+output "region_info" {
+  description = "Information about the region this module deployed to"
+  value = {
+    location   = var.region.location
+    short_name = var.region.short_name
+  }
 }

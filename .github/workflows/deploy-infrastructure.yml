@@ -94,7 +94,13 @@ jobs:
         terraform_version: ${{ env.TF_VERSION }}
 
     - name: Terraform Init
-      run: terraform init
+      run: |
+        # Initialize with backend configuration
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.TERRAFORM_STATE_RG }}" \
+          -backend-config="storage_account_name=${{ secrets.TERRAFORM_STORAGE_ACCOUNT }}" \
+          -backend-config="container_name=${{ secrets.TERRAFORM_CONTAINER }}" \
+          -backend-config="key=newsraag-${TF_VAR_environment}.tfstate"
 
     # Fix for autoscale settings issue - for both apply and destroy
     - name: Handle Autoscale Settings

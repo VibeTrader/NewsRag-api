@@ -87,36 +87,74 @@ jobs:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    
+
     - name: Set Terraform Environment Variables
       run: |
+        echo "Setting up Terraform authentication..."
         echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
-        echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV
+        echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV  
         echo "ARM_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
-        
-        ACCESS_TOKEN=$(az account get-access-token --query accessToken -o tsv)
-        echo "ARM_ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
-        
-        STORAGE_TOKEN=$(az account get-access-token --resource https://storage.azure.com/ --query accessToken -o tsv)
-        echo "ARM_SAS_TOKEN=${STORAGE_TOKEN}" >> $GITHUB_ENV
+        echo "ARM_USE_AZUREAD=true" >> $GITHUB_ENV
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ env.TF_VERSION }}
 
+    - name: Ensure Backend Storage Exists
+      run: |
+        echo "Ensuring backend storage is ready..."
+        
+        # Create resource group if it doesn't exist
+        az group create --name terraform-state-rg --location eastus --output none || true
+        
+        # Create storage account if it doesn't exist
+        if ! az storage account show --name tfstatevraag --resource-group terraform-state-rg >/dev/null 2>&1; then
+          echo "Creating storage account..."
+          az storage account create \
+            --name tfstatevraag \
+            --resource-group terraform-state-rg \
+            --location eastus \
+            --sku Standard_LRS \
+            --min-tls-version TLS1_2 \
+            --allow-blob-public-access false
+          echo "✓ Storage account created"
+        else
+          echo "✓ Storage account exists"
+        fi
+        
+        # Create container if it doesn't exist
+        if ! az storage container show --name terraform-state --account-name tfstatevraag --auth-mode login >/dev/null 2>&1; then
+          echo "Creating container..."
+          az storage container create \
+            --name terraform-state \
+            --account-name tfstatevraag \
+            --auth-mode login \
+            --public-access off
+          echo "✓ Container created"
+        else
+          echo "✓ Container exists"
+        fi
+
     - name: Terraform Init
       run: |
-        # Simple init - use terraform-state-rg for backend, vibetrader-RAG-rg for resources
+        echo "Getting storage account key for backend..."
+        STORAGE_KEY=$(az storage account keys list \
+          --resource-group terraform-state-rg \
+          --account-name tfstatevraag \
+          --query '[0].value' \
+          --output tsv)
+        
+        echo "Initializing Terraform backend..."
         terraform init \
-          -backend-config="client_id=${{ secrets.AZURE_CLIENT_ID }}" \
-          -backend-config="tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
           -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
           -backend-config="resource_group_name=terraform-state-rg" \
           -backend-config="storage_account_name=tfstatevraag" \
           -backend-config="container_name=terraform-state" \
           -backend-config="key=newsraag-prod.tfstate" \
-          -backend-config="use_azuread_auth=true"
+          -backend-config="access_key=$STORAGE_KEY"
+        
+        echo "✓ Terraform initialized successfully"
 
     - name: Handle Autoscale Settings
       run: |
@@ -153,25 +191,21 @@ jobs:
     - name: Terraform Plan
       if: github.event.inputs.action != 'destroy'
       run: |
-        echo "Refreshing Terraform state..."
-        terraform plan -refresh-only -input=false -out=tfrefresh
-        terraform apply -auto-approve tfrefresh
-        
         echo "Creating deployment plan..."
         terraform plan -out=tfplan
 
     - name: Terraform Apply
       if: github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.inputs.action != 'destroy')
-      run: terraform apply -auto-approve tfplan
+      run: |
+        echo "Applying Terraform configuration..."
+        terraform apply -auto-approve tfplan
       
     - name: Terraform Destroy
       if: github.event.inputs.action == 'destroy'
       run: |
         echo "Running terraform destroy..."
         
-        echo "Refreshing state before destroy..."
-        terraform refresh
-        
+        # Clean up autoscale settings first
         RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
         for REGION in "us" "eu" "in"; do
           AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
@@ -179,19 +213,14 @@ jobs:
           az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes 2>/dev/null || echo "Already removed"
         done
         
-        TF_LOG=DEBUG terraform destroy -auto-approve
-        
-        echo "Verifying resources have been destroyed..."
-        REMAINING_AUTOSCALE=$(az monitor autoscale setting list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'newsraag')].name" -o tsv 2>/dev/null || echo "")
-        if [ -n "$REMAINING_AUTOSCALE" ]; then
-          echo "WARNING: Some autoscale settings still exist. Forcing removal..."
-          echo $REMAINING_AUTOSCALE | xargs -r -n 1 az monitor autoscale setting delete --name --resource-group $RESOURCE_GROUP --yes
-        fi
+        # Run destroy
+        terraform destroy -auto-approve
         
     - name: Get Terraform Outputs
       if: github.event.inputs.action != 'destroy'
       id: terraform_outputs
       run: |
+        echo "Retrieving Terraform outputs..."
         echo "traffic_manager_url=$(terraform output -raw traffic_manager_url)" >> $GITHUB_OUTPUT
         echo "us_app_service_name=$(terraform output -raw us_app_service_name)" >> $GITHUB_OUTPUT
         echo "europe_app_service_name=$(terraform output -raw europe_app_service_name)" >> $GITHUB_OUTPUT

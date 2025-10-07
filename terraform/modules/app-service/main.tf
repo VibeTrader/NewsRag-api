@@ -43,7 +43,7 @@ resource "azurerm_linux_web_app" "main" {
       python_version = "3.12"
     }
     
-    # FastAPI startup command
+    # FastAPI startup commands
     app_command_line = "python -m uvicorn api:app --host 0.0.0.0 --port 8000"
     
     # Health check configuration

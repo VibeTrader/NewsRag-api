@@ -5,8 +5,12 @@ terraform {
     container_name       = "terraform-state"     # Replace with your container name
     key                  = "newsraag-prod.tfstate"
     
-    # Authentication is handled by GitHub Actions via OIDC (azure/login)
+    # Authentication is handled via GitHub workflow
     # No need to include credentials here
+    use_oidc            = true
+    use_azuread_auth    = true
+    subscription_id     = "REPLACED_BY_WORKFLOW"
+    tenant_id           = "REPLACED_BY_WORKFLOW" 
   }
   
   required_providers {
@@ -23,4 +27,7 @@ provider "azurerm" {
       prevent_deletion_if_contains_resources = false
     }
   }
+  
+  # Use these settings for service principal authentication in GitHub Actions
+  use_oidc = true
 }

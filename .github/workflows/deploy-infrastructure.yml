@@ -88,22 +88,15 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     
-    # Set up environment variables for direct Terraform authentication
     - name: Set Terraform Environment Variables
       run: |
-        # Create credentials file for Terraform Azure authentication
-        echo "Setting up Azure environment variables for Terraform"
-        
-        # Export Azure credentials as environment variables
         echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
         echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV
         echo "ARM_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
         
-        # Get access token for Azure CLI authentication
         ACCESS_TOKEN=$(az account get-access-token --query accessToken -o tsv)
         echo "ARM_ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
         
-        # Also get a storage-specific token
         STORAGE_TOKEN=$(az account get-access-token --resource https://storage.azure.com/ --query accessToken -o tsv)
         echo "ARM_SAS_TOKEN=${STORAGE_TOKEN}" >> $GITHUB_ENV
 
@@ -114,47 +107,28 @@ jobs:
 
     - name: Terraform Init
       run: |
-        echo "Finding storage account location..."
-        
-        # Find which resource group actually contains the storage account
-        ACTUAL_STORAGE_RG=$(az storage account list --query "[?name=='tfstatevraag'].resourceGroup" --output tsv)
-        
-        if [ -z "$ACTUAL_STORAGE_RG" ]; then
-          echo "ERROR: Storage account 'tfstatevraag' not found in current subscription"
-          echo "Available storage accounts:"
-          az storage account list --query "[].{Name:name,ResourceGroup:resourceGroup}" --output table
-          exit 1
-        fi
-        
-        echo "Storage account found in resource group: $ACTUAL_STORAGE_RG"
-        
-        # Use the actual resource group for backend config
-        echo "Initializing Terraform with correct resource group..."
+        # Simple init - use terraform-state-rg for backend, vibetrader-RAG-rg for resources
         terraform init \
           -backend-config="client_id=${{ secrets.AZURE_CLIENT_ID }}" \
           -backend-config="tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
           -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -backend-config="resource_group_name=$ACTUAL_STORAGE_RG" \
+          -backend-config="resource_group_name=terraform-state-rg" \
           -backend-config="storage_account_name=tfstatevraag" \
           -backend-config="container_name=terraform-state" \
           -backend-config="key=newsraag-prod.tfstate" \
           -backend-config="use_azuread_auth=true"
 
-    # Handle autoscale settings issue - for both apply and destroy
     - name: Handle Autoscale Settings
       run: |
-        # Common setup
         RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
         echo "Managing autoscale settings in $RESOURCE_GROUP..."
         
-        # Define regions and autoscale names
         declare -A MODULE_PATHS=(
           ["us"]="module.app_services[\"us\"].azurerm_monitor_autoscale_setting.main"
           ["eu"]="module.app_services[\"europe\"].azurerm_monitor_autoscale_setting.main"
           ["in"]="module.app_services[\"india\"].azurerm_monitor_autoscale_setting.main"
         )
         
-        # Check for existing autoscale settings
         for REGION in "us" "eu" "in"; do
           AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
           echo "Checking for $AUTOSCALE_NAME..."
@@ -165,11 +139,9 @@ jobs:
             echo "Found existing autoscale setting: $AUTOSCALE_NAME"
             
             if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
-              # For destroy: Delete the autoscale setting directly
               echo "Deleting autoscale setting $AUTOSCALE_NAME before destroy..."
               az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes
             else
-              # For apply/plan: Import the resource into Terraform state
               echo "Importing $AUTOSCALE_NAME into Terraform state..."
               terraform import ${MODULE_PATHS[$REGION]} $AUTOSCALE_ID || echo "Import failed, continue anyway"
             fi
@@ -181,12 +153,10 @@ jobs:
     - name: Terraform Plan
       if: github.event.inputs.action != 'destroy'
       run: |
-        # Run plan with refresh-only first to update state with imported resources
         echo "Refreshing Terraform state..."
         terraform plan -refresh-only -input=false -out=tfrefresh
         terraform apply -auto-approve tfrefresh
         
-        # Now create the actual plan
         echo "Creating deployment plan..."
         terraform plan -out=tfplan
 
@@ -197,13 +167,11 @@ jobs:
     - name: Terraform Destroy
       if: github.event.inputs.action == 'destroy'
       run: |
-        echo "Running terraform destroy with full debug logs..."
+        echo "Running terraform destroy..."
         
-        # Run destroy with refreshed state
         echo "Refreshing state before destroy..."
         terraform refresh
         
-        # Force removal of autoscale settings again just to be safe
         RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
         for REGION in "us" "eu" "in"; do
           AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
@@ -211,10 +179,8 @@ jobs:
           az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes 2>/dev/null || echo "Already removed"
         done
         
-        # Run destroy with auto-approval
         TF_LOG=DEBUG terraform destroy -auto-approve
         
-        # Verify resources are gone
         echo "Verifying resources have been destroyed..."
         REMAINING_AUTOSCALE=$(az monitor autoscale setting list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'newsraag')].name" -o tsv 2>/dev/null || echo "")
         if [ -n "$REMAINING_AUTOSCALE" ]; then

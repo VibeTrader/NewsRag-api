@@ -1,8 +1,9 @@
 # backend.tf
 terraform {
-  backend "azurerm" {
-    # Empty backend configuration - will be filled via CLI parameters
-  }
+  # Temporarily disable backend for local testing
+   backend "azurerm" {
+     # Empty backend configuration - will be filled via CLI parameters
+   }
   
   required_providers {
     azurerm = {
@@ -13,6 +14,9 @@ terraform {
 }
 
 provider "azurerm" {
+  # Skip automatic resource provider registration to avoid Microsoft.TimeSeriesInsights error
+  skip_provider_registration = true
+  
   features {
     resource_group {
       prevent_deletion_if_contains_resources = false

@@ -2,137 +2,135 @@
 # Main Terraform configuration for multi-region NewsRAG API
 # -----------------------------------------------------
 
-# Use existing resource group
-data "azurerm_resource_group" "main" {
-  name = var.existing_resource_group_name
-}
-
-# Shared Log Analytics workspace
-resource "azurerm_log_analytics_workspace" "shared" {
-  name                = "logs-newsraag-shared-${var.environment}"
-  resource_group_name = data.azurerm_resource_group.main.name
-  location            = data.azurerm_resource_group.main.location
-  sku                 = "PerGB2018"
-  retention_in_days   = var.log_retention_days
+# Local values for consistent naming
+locals {
+  project_name = "newsraag"
+  environment  = var.environment
   
-  tags = {
-    Environment = var.environment
-    Application = "NewsRAG API"
-    Terraform   = "true"
-  }
-}
-
-# Shared Application Insights instance
-resource "azurerm_application_insights" "shared" {
-  name                = "insights-newsraag-shared-${var.environment}"
-  resource_group_name = data.azurerm_resource_group.main.name
-  location            = data.azurerm_resource_group.main.location
-  workspace_id        = azurerm_log_analytics_workspace.shared.id
-  application_type    = "web"
-  
-  tags = {
-    Environment = var.environment
-    Application = "NewsRAG API"
-    Terraform   = "true"
-  }
-}
-
-# Multi-region app services with for_each
-module "app_services" {
-  for_each = {
+  # Define all regions
+  regions = {
     us      = { location = "East US", short_name = "us" }
     europe  = { location = "North Europe", short_name = "eu" }
     india   = { location = "Central India", short_name = "in" }
   }
   
+  # Common tags
+  common_tags = {
+    Environment = var.environment
+    Application = "NewsRAG API"
+    Terraform   = "true"
+  }
+}
+
+# Use existing resource group
+data "azurerm_resource_group" "existing" {
+  name = var.existing_resource_group_name
+}
+
+# Shared Log Analytics Workspace for all regions
+resource "azurerm_log_analytics_workspace" "shared" {
+  name                = "logs-${local.project_name}-shared-${local.environment}"
+  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = data.azurerm_resource_group.existing.name
+  sku                 = "PerGB2018"
+  retention_in_days   = var.log_retention_days
+  
+  tags = local.common_tags
+}
+
+# Shared Application Insights for all 3 regions
+resource "azurerm_application_insights" "shared" {
+  name                = "insights-${local.project_name}-shared-${local.environment}"
+  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = data.azurerm_resource_group.existing.name
+  workspace_id        = azurerm_log_analytics_workspace.shared.id
+  application_type    = "web"
+  
+  tags = local.common_tags
+}
+
+# Deploy App Services for all regions using for_each
+module "app_services" {
   source = "./modules/app-service"
   
-  # Required parameters matching module variables
-  project_name                              = "newsraag"
-  environment                               = var.environment
-  existing_resource_group_name              = data.azurerm_resource_group.main.name
-  existing_resource_group_location          = data.azurerm_resource_group.main.location
+  # Loop through all regions
+  for_each = local.regions
   
-  # Region object as expected by module
-  region = {
-    location   = each.value.location
-    short_name = each.value.short_name
-  }
+  project_name     = local.project_name
+  environment      = local.environment
+  region           = each.value  # Pass the region object (location, short_name)
   
-  # App service plan config
+  # Use existing resource group
+  existing_resource_group_name     = data.azurerm_resource_group.existing.name
+  existing_resource_group_location = data.azurerm_resource_group.existing.location
+  
+  # App Service configuration - Basic tier
   app_service_plan_sku  = var.app_service_plan_sku
   app_service_plan_tier = var.app_service_plan_tier
+  min_instances         = var.min_instances
+  max_instances         = var.max_instances
   
-  # Autoscaling settings
-  min_instances = var.min_instances
-  max_instances = var.max_instances
-  
-  # App settings
-  app_settings = var.app_settings
-  
-  # Application Insights integration
+  # Use shared Application Insights
   application_insights_id                   = azurerm_application_insights.shared.id
   application_insights_instrumentation_key = azurerm_application_insights.shared.instrumentation_key
   application_insights_connection_string   = azurerm_application_insights.shared.connection_string
   
-  # Common tags
-  common_tags = {
-    Environment = var.environment
-    Region      = each.key
-    Application = "NewsRAG API"
-    Terraform   = "true"
-  }
+  # Application configuration
+  app_settings = var.app_settings
+  
+  common_tags = local.common_tags
 }
 
-# Traffic Manager for global routing
+# Traffic Manager for global load balancing
 module "traffic_manager" {
   source = "./modules/traffic-manager"
   
-  name                = "newsraag"
-  environment         = var.environment
-  resource_group_name = data.azurerm_resource_group.main.name
+  project_name         = local.project_name
+  environment          = local.environment
+  resource_group_name  = data.azurerm_resource_group.existing.name
   
-  # App service endpoints
-  endpoints = {
-    us = {
-      name         = "endpoint-us-${var.environment}"
-      target_id    = module.app_services["us"].app_service_id
-      priority     = 1
-      weight       = 100
-      location     = "East US"
-    },
-    europe = {
-      name         = "endpoint-eu-${var.environment}"
-      target_id    = module.app_services["europe"].app_service_id
-      priority     = 2
-      weight       = 100
-      location     = "North Europe"
-    },
-    india = {
-      name         = "endpoint-in-${var.environment}"
-      target_id    = module.app_services["india"].app_service_id
-      priority     = 3
-      weight       = 100
-      location     = "Central India"
-    }
-  }
+  # Pass all app service endpoints as required by module
+  existing_app_service_id   = module.app_services["us"].app_service_id
+  existing_app_service_name = module.app_services["us"].app_service_name
   
-  # Tags
-  tags = {
-    Environment = var.environment
-    Application = "NewsRAG API"
-    Terraform   = "true"
-  }
+  europe_app_service_id   = module.app_services["europe"].app_service_id
+  europe_app_service_name = module.app_services["europe"].app_service_name
+  
+  india_app_service_id   = module.app_services["india"].app_service_id
+  india_app_service_name = module.app_services["india"].app_service_name
+  
+  # Health check configuration
+  health_check_path = var.health_check_path
+  
+  # Use shared Application Insights for availability tests
+  application_insights_id = azurerm_application_insights.shared.id
+  
+  common_tags = local.common_tags
 }
 
-# Monitoring alerts
+# Enhanced monitoring for multi-region setup
 module "monitoring" {
   source = "./modules/monitoring"
   
-  name                     = "newsraag"
-  environment              = var.environment
-  resource_group_name      = data.azurerm_resource_group.main.name
-  app_insights_id          = azurerm_application_insights.shared.id
-  alert_email              = var.alert_email
-  slack_webhook_url        = var.slack_webhook_url
+  project_name         = local.project_name
+  environment          = local.environment
+  resource_group_name  = data.azurerm_resource_group.existing.name
+  
+  # Use shared Application Insights
+  application_insights_id = azurerm_application_insights.shared.id
+  
+  # Build app_services map dynamically from for_each results
+  app_services = {
+    for region_key, region_config in local.regions : region_key => {
+      id     = module.app_services[region_key].app_service_id
+      name   = module.app_services[region_key].app_service_name
+      region = region_key
+    }
+  }
+  
+  # Alert configuration
+  alert_email       = var.alert_email
+  slack_webhook_url = var.slack_webhook_url
+  
+  common_tags = local.common_tags
 }

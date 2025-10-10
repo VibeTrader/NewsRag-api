@@ -136,7 +136,7 @@ resource "azurerm_monitor_metric_alert" "request_spike" {
   description         = "Unusual request spike alert for ${each.key} region"
   severity            = 2
   frequency           = "PT1M"
-  window_size         = "PT10M"
+  window_size         = "PT15M"
   auto_mitigate       = true
   
   criteria {
@@ -192,7 +192,7 @@ resource "azurerm_monitor_metric_alert" "high_connections" {
   description         = "High connection count alert for ${each.key} region"
   severity            = 2
   frequency           = "PT5M"
-  window_size         = "PT10M"
+  window_size         = "PT15M"
   auto_mitigate       = true
   
   criteria {
@@ -311,7 +311,7 @@ resource "azurerm_monitor_metric_alert" "high_exception_rate" {
   description         = "High exception rate alert"
   severity            = 1
   frequency           = "PT5M"
-  window_size         = "PT10M"
+  window_size         = "PT15M"
   auto_mitigate       = true
   
   criteria {
@@ -337,7 +337,7 @@ resource "azurerm_monitor_metric_alert" "dependency_failures" {
   description         = "High dependency failure rate alert"
   severity            = 2
   frequency           = "PT5M"
-  window_size         = "PT10M"
+  window_size         = "PT15M"
   auto_mitigate       = true
   
   criteria {

@@ -99,12 +99,6 @@ output "action_group_name" {
   value       = module.monitoring.action_group_name
 }
 
-output "monitoring_summary" {
-  description = "Summary of monitoring setup"
-  value       = module.monitoring.monitoring_summary
-  sensitive   = true
-}
-
 # Resource Summary (Dynamic)
 output "resources_created" {
   description = "Summary of all resources created"

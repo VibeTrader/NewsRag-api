@@ -128,6 +128,17 @@ module "monitoring" {
     }
   }
   
+  # Build app_service_plans map for Standard+ tier monitoring
+  app_service_plans = {
+    for region_key, region_config in local.regions : region_key => {
+      id   = module.app_services[region_key].app_service_plan_id
+      name = module.app_services[region_key].app_service_plan_name
+    }
+  }
+  
+  # Enable plan metrics when using Standard+ tiers (set via variable)
+  enable_plan_metrics = var.enable_plan_metrics
+  
   # Alert configuration
   alert_email       = var.alert_email
   slack_webhook_url = var.slack_webhook_url

@@ -122,3 +122,10 @@ variable "log_retention_days" {
   type        = number
   default     = 30 # Standard retention for cost optimization
 }
+
+# Monitoring Configuration
+variable "enable_plan_metrics" {
+  description = "Enable App Service Plan level metrics (CPU/Memory percentage). Only works with Standard+ tiers. Set to true when upgrading from Basic."
+  type        = bool
+  default     = false # Set to true when you upgrade to Standard/Premium
+}

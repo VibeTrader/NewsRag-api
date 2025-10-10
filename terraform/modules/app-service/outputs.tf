@@ -43,6 +43,9 @@ output "app_service_hostname" {
   value       = azurerm_linux_web_app.main.default_hostname
 }
 
+# NOTE: Autoscale outputs commented out for Basic tier compatibility
+# Uncomment when upgrading to Standard/Premium tiers
+
 # output "autoscale_setting_id" {
 #   description = "ID of the autoscale setting"
 #   value       = azurerm_monitor_autoscale_setting.main.id

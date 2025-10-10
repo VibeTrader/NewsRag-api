@@ -1,5 +1,6 @@
 # ============================================
 # Monitoring Module Variables
+# Compatible with Basic, Standard, and Premium tiers
 # ============================================
 
 variable "project_name" {
@@ -31,6 +32,21 @@ variable "app_services" {
   }))
 }
 
+variable "app_service_plans" {
+  description = "Map of app service plans to monitor (Standard+ tiers only)"
+  type = map(object({
+    id   = string
+    name = string
+  }))
+  default = {}
+}
+
+variable "enable_plan_metrics" {
+  description = "Enable App Service Plan level metrics (only works with Standard+ tiers)"
+  type        = bool
+  default     = false # Set to true when upgrading to Standard+
+}
+
 variable "alert_email" {
   description = "Email address for alerts"
   type        = string
@@ -47,4 +63,35 @@ variable "common_tags" {
   description = "Common tags for all resources"
   type        = map(string)
   default     = {}
+}
+
+# Customizable thresholds
+variable "response_time_threshold" {
+  description = "Response time threshold in seconds"
+  type        = number
+  default     = 5
+}
+
+variable "memory_threshold_bytes" {
+  description = "Memory threshold in bytes"
+  type        = number
+  default     = 1610612736 # 1.5GB - adjust based on your tier
+}
+
+variable "request_spike_threshold" {
+  description = "Request spike threshold per 10 minutes"
+  type        = number
+  default     = 1000
+}
+
+variable "error_5xx_threshold" {
+  description = "5xx error threshold per 5 minutes"
+  type        = number
+  default     = 10
+}
+
+variable "error_4xx_threshold" {
+  description = "4xx error threshold per 15 minutes"
+  type        = number
+  default     = 50
 }

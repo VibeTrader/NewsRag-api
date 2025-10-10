@@ -53,6 +53,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Simple health endpoint for Traffic Manager (no dependencies)
+@app.get("/health/simple")
+async def simple_health_check():
+    """Simple health check that doesn't depend on external services - for Traffic Manager."""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "environment": os.getenv("ENVIRONMENT", "unknown"),
+        "region": os.getenv("DEPLOYMENT_REGION", "unknown"),
+        "version": "1.0.0"
+    }
+
+# Root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": "NewsRag API is running",
+        "environment": os.getenv("ENVIRONMENT", "unknown"), 
+        "region": os.getenv("DEPLOYMENT_REGION", "unknown"),
+        "health_endpoint": "/health/simple"
+    }
+
 # Initialize Application Insights monitoring
 monitor = AppInsightsMonitor(app)
 

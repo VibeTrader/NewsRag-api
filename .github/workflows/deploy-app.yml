@@ -45,7 +45,7 @@ permissions:
   contents: read
 
 env:
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.11'
   RESOURCE_GROUP: ${{ github.event.inputs.resource_group || 'vibetrader-RAG-rg' }}
 
 jobs:
@@ -183,7 +183,23 @@ jobs:
             WEBSITES_PORT="8000" \
             WEBSITES_ENABLE_APP_SERVICE_STORAGE="false" \
             SCM_DO_BUILD_DURING_DEPLOYMENT="true" \
-            ENABLE_ORYX_BUILD="true"
+            ENABLE_ORYX_BUILD="true" \
+            OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            OPENAI_BASE_URL="${{ secrets.OPENAI_BASE_URL }}" \
+            AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION || '2024-02-01' }}" \
+            AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
+            AZURE_OPENAI_EMBEDDING_DEPLOYMENT="${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}" \
+            AZURE_OPENAI_EMBEDDING_MODEL="${{ secrets.AZURE_OPENAI_EMBEDDING_MODEL }}" \
+            EMBEDDING_DIMENSION="${{ secrets.EMBEDDING_DIMENSION || '3072' }}" \
+            QDRANT_URL="${{ secrets.QDRANT_URL }}" \
+            QDRANT_API_KEY="${{ secrets.QDRANT_API_KEY }}" \
+            QDRANT_COLLECTION_NAME="${{ secrets.QDRANT_COLLECTION_NAME }}" \
+            CACHE_TTL="${{ secrets.CACHE_TTL || '3600' }}" \
+            DEFAULT_ARTICLE_LIMIT="${{ secrets.DEFAULT_ARTICLE_LIMIT || '50' }}" \
+            MAX_ARTICLE_CONTENT_CHARS="${{ secrets.MAX_ARTICLE_CONTENT_CHARS || '10000' }}" \
+            MAX_CHUNK_SIZE="${{ secrets.MAX_CHUNK_SIZE || '1000' }}" \
+            SUMMARY_CACHE_SIZE="${{ secrets.SUMMARY_CACHE_SIZE || '1000' }}" \
+            SUMMARY_CACHE_TTL="${{ secrets.SUMMARY_CACHE_TTL || '3600' }}"
 
     - name: 🚀 Configure FastAPI Startup Command
       run: |
@@ -195,44 +211,23 @@ jobs:
           --resource-group ${{ env.RESOURCE_GROUP }} \
           --startup-file "python -m uvicorn api:app --host 0.0.0.0 --port 8000"
 
-    - name: 🔐 Configure Sensitive App Settings
+    - name: 📊 Configure Optional Features (Storage & Monitoring)
       run: |
-        echo "🔐 Adding sensitive settings for ${{ matrix.region.flag }} ${{ matrix.region.name }}..."
+        echo "📊 Adding optional features for ${{ matrix.region.flag }} ${{ matrix.region.name }}..."
         
-        # Add sensitive settings from GitHub secrets
-        az webapp config appsettings set \
-          --name ${{ matrix.region.app_name }} \
-          --resource-group ${{ env.RESOURCE_GROUP }} \
-          --settings \
-            OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
-            OPENAI_BASE_URL="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
-            AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION || '2024-02-01' }}" \
-            AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
-            AZURE_OPENAI_EMBEDDING_DEPLOYMENT="${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}" \
-            AZURE_OPENAI_EMBEDDING_MODEL="${{ secrets.AZURE_OPENAI_EMBEDDING_MODEL || 'text-embedding-3-large' }}" \
-            EMBEDDING_DIMENSION="${{ secrets.EMBEDDING_DIMENSION || '3072' }}" \
-            QDRANT_URL="${{ secrets.QDRANT_URL }}" \
-            QDRANT_API_KEY="${{ secrets.QDRANT_API_KEY }}" \
-            QDRANT_COLLECTION_NAME="${{ secrets.QDRANT_COLLECTION_NAME || 'news_articles' }}" \
-            AZ_ACCOUNT_NAME="${{ secrets.AZ_ACCOUNT_NAME }}" \
-            AZ_BLOB_ACCESS_KEY="${{ secrets.AZ_BLOB_ACCESS_KEY }}" \
-            AZ_CONTAINER_NAME="${{ secrets.AZ_CONTAINER_NAME }}"
-
-    - name: 🔧 Configure Optional Settings
-      run: |
-        echo "🔧 Adding optional settings for ${{ matrix.region.flag }} ${{ matrix.region.name }}..."
-        
-        # Add optional settings (with fallbacks)
-        az webapp config appsettings set \
-          --name ${{ matrix.region.app_name }} \
-          --resource-group ${{ env.RESOURCE_GROUP }} \
-          --settings \
-            CACHE_TTL="${{ secrets.CACHE_TTL || '3600' }}" \
-            DEFAULT_ARTICLE_LIMIT="${{ secrets.DEFAULT_ARTICLE_LIMIT || '50' }}" \
-            MAX_ARTICLE_CONTENT_CHARS="${{ secrets.MAX_ARTICLE_CONTENT_CHARS || '10000' }}" \
-            MAX_CHUNK_SIZE="${{ secrets.MAX_CHUNK_SIZE || '1000' }}" \
-            SUMMARY_CACHE_SIZE="${{ secrets.SUMMARY_CACHE_SIZE || '1000' }}" \
-            SUMMARY_CACHE_TTL="${{ secrets.SUMMARY_CACHE_TTL || '3600' }}"
+        # Add Azure Storage settings if secrets are available
+        if [ -n "${{ secrets.AZ_ACCOUNT_NAME }}" ]; then
+          az webapp config appsettings set \
+            --name ${{ matrix.region.app_name }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --settings \
+              AZ_ACCOUNT_NAME="${{ secrets.AZ_ACCOUNT_NAME }}" \
+              AZ_BLOB_ACCESS_KEY="${{ secrets.AZ_BLOB_ACCESS_KEY }}" \
+              AZ_CONTAINER_NAME="${{ secrets.AZ_CONTAINER_NAME }}"
+          echo "✅ Azure Storage settings configured"
+        else
+          echo "ℹ️ Azure Storage settings skipped (secrets not provided)"
+        fi
             
         # Add Langfuse settings if provided
         if [ -n "${{ secrets.LANGFUSE_HOST }}" ]; then

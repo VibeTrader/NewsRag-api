@@ -43,17 +43,17 @@ resource "azurerm_monitor_metric_alert" "high_response_time" {
   name                = "alert-response-time-${each.key}-${var.environment}"
   resource_group_name = var.resource_group_name
   scopes              = [each.value.id]
-  description         = "High response time alert for ${each.key} region"
+  description         = "High HTTP response time alert for ${each.key} region"
   severity            = 2
   frequency           = "PT1M"
   window_size         = "PT5M"
   
   criteria {
     metric_namespace = "Microsoft.Web/sites"
-    metric_name      = "AverageResponseTime"
+    metric_name      = "HttpResponseTime"
     aggregation      = "Average"
     operator         = "GreaterThan"
-    threshold        = 5000 # 5 seconds
+    threshold        = 5 # 5 seconds
     
     dimension {
       name     = "Instance"
@@ -102,17 +102,17 @@ resource "azurerm_monitor_metric_alert" "high_cpu" {
   name                = "alert-cpu-${each.key}-${var.environment}"
   resource_group_name = var.resource_group_name
   scopes              = [each.value.id]
-  description         = "High CPU usage alert for ${each.key} region"
+  description         = "High CPU time usage alert for ${each.key} region"
   severity            = 2
   frequency           = "PT5M"
   window_size         = "PT15M"
   
   criteria {
     metric_namespace = "Microsoft.Web/sites"
-    metric_name      = "CpuPercentage"
+    metric_name      = "CpuTime"
     aggregation      = "Average"
     operator         = "GreaterThan"
-    threshold        = 80 # 80% CPU usage
+    threshold        = 300 # 300 seconds (5 minutes) of CPU time in 5-minute window
   }
   
   action {
@@ -129,17 +129,17 @@ resource "azurerm_monitor_metric_alert" "high_memory" {
   name                = "alert-memory-${each.key}-${var.environment}"
   resource_group_name = var.resource_group_name
   scopes              = [each.value.id]
-  description         = "High memory usage alert for ${each.key} region"
+  description         = "High memory working set usage alert for ${each.key} region"
   severity            = 2
   frequency           = "PT5M"
   window_size         = "PT15M"
   
   criteria {
     metric_namespace = "Microsoft.Web/sites"
-    metric_name      = "MemoryPercentage"
+    metric_name      = "MemoryWorkingSet"
     aggregation      = "Average"
     operator         = "GreaterThan"
-    threshold        = 85 # 85% memory usage
+    threshold        = 1073741824 # 1GB in bytes
   }
   
   action {

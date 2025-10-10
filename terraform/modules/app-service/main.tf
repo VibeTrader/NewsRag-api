@@ -59,7 +59,7 @@ resource "azurerm_linux_web_app" "main" {
     http2_enabled = true
   }
   
-  # Application settings
+  # Application setting
   app_settings = merge(
     var.app_settings,
     {

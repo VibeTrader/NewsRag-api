@@ -65,6 +65,18 @@ async def simple_health_check():
         "version": "1.0.0"
     }
 
+# Main health endpoint (what Traffic Manager expects)
+@app.get("/health")
+async def health_check():
+    """Main health check endpoint for Traffic Manager."""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "environment": os.getenv("ENVIRONMENT", "unknown"),
+        "region": os.getenv("DEPLOYMENT_REGION", "unknown"),
+        "version": "1.0.0"
+    }
+
 # Root endpoint
 @app.get("/")
 async def root():

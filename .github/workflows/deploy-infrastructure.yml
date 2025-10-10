@@ -224,9 +224,77 @@ jobs:
         echo "india_app_service_name=$(terraform output -raw india_app_service_name)" >> $GITHUB_OUTPUT
         echo "resource_group_name=$(terraform output -raw existing_resource_group_name)" >> $GITHUB_OUTPUT
 
+  configure_app_settings:
+    name: 'Configure App Settings with Secrets'
+    needs: terraform
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
+    
+    strategy:
+      matrix:
+        region:
+          - name: "US"
+            app_name: ${{ needs.terraform.outputs.us_app_service_name }}
+            short_name: "us"
+            location: "East US"
+          - name: "Europe" 
+            app_name: ${{ needs.terraform.outputs.europe_app_service_name }}
+            short_name: "eu"
+            location: "North Europe"
+          - name: "India"
+            app_name: ${{ needs.terraform.outputs.india_app_service_name }}
+            short_name: "in"
+            location: "Central India"
+    
+    steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Configure App Settings for ${{ matrix.region.name }}
+      run: |
+        echo "🔧 Configuring app settings for ${{ matrix.region.name }} region..."
+        
+        az webapp config appsettings set \
+          --name ${{ matrix.region.app_name }} \
+          --resource-group ${{ needs.terraform.outputs.resource_group_name }} \
+          --settings \
+            DEPLOYMENT_REGION="${{ matrix.region.short_name }}" \
+            AZURE_REGION="${{ matrix.region.location }}" \
+            ENVIRONMENT="production" \
+            PORT="8000" \
+            API_HOST="0.0.0.0" \
+            API_PORT="8000" \
+            PYTHONUNBUFFERED="1" \
+            HEALTH_CHECK_ENABLED="true" \
+            WEBSITES_PORT="8000" \
+            WEBSITES_ENABLE_APP_SERVICE_STORAGE="false" \
+            SCM_DO_BUILD_DURING_DEPLOYMENT="true" \
+            ENABLE_ORYX_BUILD="true" \
+            OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            OPENAI_BASE_URL="${{ secrets.OPENAI_BASE_URL }}" \
+            AZURE_OPENAI_API_VERSION="2024-02-01" \
+            AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
+            AZURE_OPENAI_EMBEDDING_DEPLOYMENT="${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}" \
+            AZURE_OPENAI_EMBEDDING_MODEL="${{ secrets.AZURE_OPENAI_EMBEDDING_MODEL }}" \
+            EMBEDDING_DIMENSION="3072" \
+            QDRANT_URL="${{ secrets.QDRANT_URL }}" \
+            QDRANT_API_KEY="${{ secrets.QDRANT_API_KEY }}" \
+            QDRANT_COLLECTION_NAME="${{ secrets.QDRANT_COLLECTION_NAME }}" \
+            CACHE_TTL="3600" \
+            DEFAULT_ARTICLE_LIMIT="50" \
+            MAX_ARTICLE_CONTENT_CHARS="10000" \
+            MAX_CHUNK_SIZE="1000" \
+            SUMMARY_CACHE_SIZE="1000" \
+            SUMMARY_CACHE_TTL="3600"
+
+        echo "✅ App settings configured for ${{ matrix.region.name }}"
+
   infrastructure_complete:
     name: 'Infrastructure Deployment Complete'
-    needs: terraform
+    needs: [terraform, configure_app_settings]
     runs-on: ubuntu-latest
     if: github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
     
@@ -242,4 +310,5 @@ jobs:
         echo "  • Resource Group: ${{ needs.terraform.outputs.resource_group_name }}"
         echo ""
         echo "✅ Infrastructure is ready for app deployment!"
-        echo "🚀 The app deployment pipeline will automatically start if code changes are pushed."
+        echo "✅ App settings configured with secrets for all regions!"
+        echo "🚀 Your apps should now start successfully with proper configuration!"

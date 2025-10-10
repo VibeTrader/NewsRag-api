@@ -30,17 +30,17 @@ variable "app_service_plan_tier" {
 }
 
 # Scaling Configuration (Basic tier has limited scaling)
-variable "min_instances" {
-  description = "Minimum number of instances for auto-scaling"
-  type        = number
-  default     = 1 # Basic tier minimum
-}
+# variable "min_instances" {
+#   description = "Minimum number of instances for auto-scaling"
+#   type        = number
+#   default     = 1 # Basic tier minimum
+# }
 
-variable "max_instances" {
-  description = "Maximum number of instances for auto-scaling"
-  type        = number
-  default     = 3 # Basic tier maximum
-}
+# variable "max_instances" {
+#   description = "Maximum number of instances for auto-scaling"
+#   type        = number
+#   default     = 3 # Basic tier maximum
+# }
 
 # Application Settings (passed to all App Services)
 variable "app_settings" {

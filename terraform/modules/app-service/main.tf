@@ -78,15 +78,6 @@ resource "azurerm_linux_web_app" "main" {
     }
   )
   
-  # Connection strings (if needed for databases)
-  dynamic "connection_string" {
-    for_each = var.connection_strings
-    content {
-      name  = connection_string.value.name
-      type  = connection_string.value.type
-      value = connection_string.value.value
-    }
-  }
   
   tags = var.common_tags
   
@@ -101,105 +92,105 @@ resource "azurerm_linux_web_app" "main" {
 
 # Auto-scaling configuration (Per App Service Plan)
 # Each region scales independently based on its own metrics
-resource "azurerm_monitor_autoscale_setting" "main" {
-  name                = "autoscale-${local.resource_prefix}-${var.environment}"
-  location            = var.region.location
-  resource_group_name = var.existing_resource_group_name  # Use existing RG
-  target_resource_id  = azurerm_service_plan.main.id
+# resource "azurerm_monitor_autoscale_setting" "main" {
+#   name                = "autoscale-${local.resource_prefix}-${var.environment}"
+#   location            = var.region.location
+#   resource_group_name = var.existing_resource_group_name  # Use existing RG
+#   target_resource_id  = azurerm_service_plan.main.id
   
-  profile {
-    name = "DefaultAutoscaleProfile"
+#   profile {
+#     name = "DefaultAutoscaleProfile"
     
-    capacity {
-      default = 1
-      minimum = var.min_instances
-      maximum = var.max_instances
-    }
+#     capacity {
+#       default = 1
+#       minimum = var.min_instances
+#       maximum = var.max_instances
+#     }
     
-    # Scale out rule - CPU > 70%
-    rule {
-      metric_trigger {
-        metric_name        = "CpuPercentage"
-        metric_resource_id = azurerm_service_plan.main.id
-        time_grain         = "PT1M"
-        statistic          = "Average"
-        time_window        = "PT5M"
-        time_aggregation   = "Average"
-        operator           = "GreaterThan"
-        threshold          = 70
-      }
+#     # Scale out rule - CPU > 70%
+#     rule {
+#       metric_trigger {
+#         metric_name        = "CpuPercentage"
+#         metric_resource_id = azurerm_service_plan.main.id
+#         time_grain         = "PT1M"
+#         statistic          = "Average"
+#         time_window        = "PT5M"
+#         time_aggregation   = "Average"
+#         operator           = "GreaterThan"
+#         threshold          = 70
+#       }
       
-      scale_action {
-        direction = "Increase"
-        type      = "ChangeCount"
-        value     = "2"
-        cooldown  = "PT5M"
-      }
-    }
+#       scale_action {
+#         direction = "Increase"
+#         type      = "ChangeCount"
+#         value     = "2"
+#         cooldown  = "PT5M"
+#       }
+#     }
     
-    # Scale in rule - CPU < 30%
-    rule {
-      metric_trigger {
-        metric_name        = "CpuPercentage"
-        metric_resource_id = azurerm_service_plan.main.id
-        time_grain         = "PT1M"
-        statistic          = "Average"
-        time_window        = "PT5M"
-        time_aggregation   = "Average"
-        operator           = "LessThan"
-        threshold          = 30
-      }
+#     # Scale in rule - CPU < 30%
+#     rule {
+#       metric_trigger {
+#         metric_name        = "CpuPercentage"
+#         metric_resource_id = azurerm_service_plan.main.id
+#         time_grain         = "PT1M"
+#         statistic          = "Average"
+#         time_window        = "PT5M"
+#         time_aggregation   = "Average"
+#         operator           = "LessThan"
+#         threshold          = 30
+#       }
       
-      scale_action {
-        direction = "Decrease"
-        type      = "ChangeCount"
-        value     = "1"
-        cooldown  = "PT5M"
-      }
-    }
+#       scale_action {
+#         direction = "Decrease"
+#         type      = "ChangeCount"
+#         value     = "1"
+#         cooldown  = "PT5M"
+#       }
+#     }
     
-    # Scale out rule - Memory > 80%
-    rule {
-      metric_trigger {
-        metric_name        = "MemoryPercentage"
-        metric_resource_id = azurerm_service_plan.main.id
-        time_grain         = "PT1M"
-        statistic          = "Average"
-        time_window        = "PT10M"
-        time_aggregation   = "Average"
-        operator           = "GreaterThan"
-        threshold          = 80
-      }
+#     # Scale out rule - Memory > 80%
+#     rule {
+#       metric_trigger {
+#         metric_name        = "MemoryPercentage"
+#         metric_resource_id = azurerm_service_plan.main.id
+#         time_grain         = "PT1M"
+#         statistic          = "Average"
+#         time_window        = "PT10M"
+#         time_aggregation   = "Average"
+#         operator           = "GreaterThan"
+#         threshold          = 80
+#       }
       
-      scale_action {
-        direction = "Increase"
-        type      = "ChangeCount"
-        value     = "1"
-        cooldown  = "PT10M"
-      }
-    }
+#       scale_action {
+#         direction = "Increase"
+#         type      = "ChangeCount"
+#         value     = "1"
+#         cooldown  = "PT10M"
+#       }
+#     }
     
-    # Scale in rule - Memory < 40%
-    rule {
-      metric_trigger {
-        metric_name        = "MemoryPercentage"
-        metric_resource_id = azurerm_service_plan.main.id
-        time_grain         = "PT1M"
-        statistic          = "Average"
-        time_window        = "PT10M"
-        time_aggregation   = "Average"
-        operator           = "LessThan"
-        threshold          = 40
-      }
+#     # Scale in rule - Memory < 40%
+#     rule {
+#       metric_trigger {
+#         metric_name        = "MemoryPercentage"
+#         metric_resource_id = azurerm_service_plan.main.id
+#         time_grain         = "PT1M"
+#         statistic          = "Average"
+#         time_window        = "PT10M"
+#         time_aggregation   = "Average"
+#         operator           = "LessThan"
+#         threshold          = 40
+#       }
       
-      scale_action {
-        direction = "Decrease"
-        type      = "ChangeCount"
-        value     = "1"
-        cooldown  = "PT10M"
-      }
-    }
-  }
+#       scale_action {
+#         direction = "Decrease"
+#         type      = "ChangeCount"
+#         value     = "1"
+#         cooldown  = "PT10M"
+#       }
+#     }
+#   }
   
-  tags = var.common_tags
-}
+#   tags = var.common_tags
+# }

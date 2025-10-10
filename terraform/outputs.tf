@@ -177,8 +177,8 @@ output "autoscaling_summary" {
     for region_key, region_config in local.regions : "${region_key}_region" => {
       app_service_plan = module.app_services[region_key].app_service_plan_name
       location        = region_config.location
-      min_instances   = var.min_instances
-      max_instances   = var.max_instances
+      # min_instances   = var.min_instances
+      # max_instances   = var.max_instances
       scaling_triggers = "CPU > 70% (scale out), CPU < 30% (scale in), Memory > 80% (scale out), Memory < 40% (scale in)"
     }
   }

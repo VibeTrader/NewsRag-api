@@ -42,15 +42,15 @@ variable "app_service_plan_tier" {
   type        = string
 }
 
-variable "min_instances" {
-  description = "Minimum number of instances"
-  type        = number
-}
+# variable "min_instances" {
+#   description = "Minimum number of instances"
+#   type        = number
+# }
 
-variable "max_instances" {
-  description = "Maximum number of instances"
-  type        = number
-}
+# variable "max_instances" {
+#   description = "Maximum number of instances"
+#   type        = number
+# }
 
 variable "app_settings" {
   description = "Application settings"

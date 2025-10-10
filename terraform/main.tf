@@ -67,8 +67,8 @@ module "app_services" {
   # App Service configuration - Basic tier
   app_service_plan_sku  = var.app_service_plan_sku
   app_service_plan_tier = var.app_service_plan_tier
-  min_instances         = var.min_instances
-  max_instances         = var.max_instances
+  # min_instances         = var.min_instances
+  # max_instances         = var.max_instances
   
   # Use shared Application Insights
   application_insights_id                   = azurerm_application_insights.shared.id

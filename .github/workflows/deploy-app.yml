@@ -49,10 +49,76 @@ env:
   RESOURCE_GROUP: ${{ github.event.inputs.resource_group || 'vibetrader-RAG-rg' }}
 
 jobs:
-  # Build the application once
+  # Pre-deployment validation
+  validate_infrastructure:
+    name: '🔍 Validate Infrastructure Ready'
+    runs-on: ubuntu-latest
+    
+    outputs:
+      infrastructure_ready: ${{ steps.check_infra.outputs.ready }}
+      
+    steps:
+    - name: 🔑 Azure Login
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    
+    - name: 🔍 Check Infrastructure Status
+      id: check_infra
+      run: |
+        echo "🔍 Checking if infrastructure is ready..."
+        
+        # Check if App Services exist
+        RESOURCE_GROUP="${{ github.event.inputs.resource_group || 'vibetrader-RAG-rg' }}"
+        
+        # Expected app service names
+        US_APP="${{ github.event.inputs.us_app_name || 'newsraag-us-prod' }}"
+        EU_APP="${{ github.event.inputs.europe_app_name || 'newsraag-eu-prod' }}"
+        IN_APP="${{ github.event.inputs.india_app_name || 'newsraag-in-prod' }}"
+        
+        echo "Checking App Services in resource group: $RESOURCE_GROUP"
+        echo "Expected apps: $US_APP, $EU_APP, $IN_APP"
+        
+        # Check if all app services exist
+        MISSING_APPS=""
+        
+        if ! az webapp show --name "$US_APP" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+          MISSING_APPS="$MISSING_APPS US($US_APP)"
+        fi
+        
+        if ! az webapp show --name "$EU_APP" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+          MISSING_APPS="$MISSING_APPS Europe($EU_APP)"
+        fi
+        
+        if ! az webapp show --name "$IN_APP" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+          MISSING_APPS="$MISSING_APPS India($IN_APP)"
+        fi
+        
+        if [ -n "$MISSING_APPS" ]; then
+          echo "❌ Infrastructure not ready. Missing App Services:$MISSING_APPS"
+          echo "🔧 Please run the infrastructure deployment first:"
+          echo "   1. Go to Actions → Deploy Infrastructure"
+          echo "   2. Click 'Run workflow'"
+          echo "   3. Wait for completion"
+          echo "   4. Then run this app deployment"
+          echo "ready=false" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "✅ All App Services found and ready!"
+          echo "   • US: $US_APP"
+          echo "   • Europe: $EU_APP"  
+          echo "   • India: $IN_APP"
+          echo "ready=true" >> $GITHUB_OUTPUT
+        fi
+        
+  # Build the application once (only if infrastructure is ready)
   build:
     name: '📦 Build NewsRag API'
     runs-on: ubuntu-latest
+    needs: validate_infrastructure
+    if: needs.validate_infrastructure.outputs.infrastructure_ready == 'true'
     
     steps:
     - name: 🚀 Checkout code

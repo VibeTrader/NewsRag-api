@@ -228,14 +228,14 @@ jobs:
         echo "india_app_service_name=$(terraform output -raw india_app_service_name)" >> $GITHUB_OUTPUT
         echo "resource_group_name=$(terraform output -raw existing_resource_group_name)" >> $GITHUB_OUTPUT
 
-  trigger_app_deployment:
-    name: 'Trigger App Deployment'
+  infrastructure_complete:
+    name: 'Infrastructure Deployment Complete'
     needs: terraform
     runs-on: ubuntu-latest
     if: github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
     
     steps:
-    - name: Infrastructure Deployment Complete
+    - name: Infrastructure Deployment Summary
       run: |
         echo "🎉 Infrastructure deployment completed successfully!"
         echo "📊 Infrastructure Summary:"
@@ -245,6 +245,5 @@ jobs:
         echo "  • India App Service: ${{ needs.terraform.outputs.india_app_service_name }}"
         echo "  • Resource Group: ${{ needs.terraform.outputs.resource_group_name }}"
         echo ""
-        echo "🚀 Next Steps:"
-        echo "  1. Manually run the 'Deploy App' workflow OR"
-        echo "  2. Push code changes to trigger automatic app deployment"
+        echo "✅ Infrastructure is ready for app deployment!"
+        echo "🚀 The app deployment pipeline will automatically start if code changes are pushed."

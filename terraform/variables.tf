@@ -98,7 +98,7 @@ variable "alert_email" {
 variable "slack_webhook_url" {
   description = "Slack webhook URL for alerts (optional)"
   type        = string
-  default     = "" # Add your Slack webhook URL if you have one
+  default     = "https://hooks.slack.com/services/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"
   sensitive   = true
 }
 

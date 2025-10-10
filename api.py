@@ -704,11 +704,15 @@ async def performance_metrics():
             "timestamp": datetime.now().isoformat()
         }
 
-# Import the Langfuse debugging endpoint
-from langfuse_test_endpoint import router as langfuse_test_router
-
-# Add the Langfuse testing router
-app.include_router(langfuse_test_router, prefix="/langfuse-debug", tags=["diagnostics"])
+# Import the Langfuse debugging endpoint (optional)
+try:
+    from langfuse_test_endpoint import router as langfuse_test_router
+    # Add the Langfuse testing router
+    app.include_router(langfuse_test_router, prefix="/langfuse-debug", tags=["diagnostics"])
+    logger.info("Langfuse debugging endpoint loaded successfully")
+except ImportError as e:
+    logger.warning(f"Langfuse test endpoint not available: {e}")
+    langfuse_test_router = None
 
 # Add a direct endpoint for even more detailed Langfuse debugging
 @app.get("/langfuse-direct-test")

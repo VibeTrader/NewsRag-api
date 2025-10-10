@@ -60,15 +60,7 @@ resource "azurerm_monitor_metric_alert" "high_response_time" {
     aggregation      = "Average"
     operator         = "GreaterThan"
     threshold        = 5 # 5 seconds
-<<<<<<< Updated upstream
-    
-    dimension {
-      name     = "Instance"
-      operator = "Include"
-      values   = ["*"]
-    }
-=======
->>>>>>> Stashed changes
+
   }
   
   action {

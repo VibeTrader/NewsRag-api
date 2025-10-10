@@ -157,7 +157,11 @@ jobs:
         python -c "
         import sys
         sys.path.insert(0, '.')
-    
+        
+        try:
+            # Import main modules
+            from api import app
+            print('✅ Successfully imported core modules')
         except Exception as e:
             print(f'⚠️ Import test failed: {e}')
             # Don't fail the build for import issues during testing

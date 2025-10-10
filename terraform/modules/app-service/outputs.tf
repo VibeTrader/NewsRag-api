@@ -43,15 +43,15 @@ output "app_service_hostname" {
   value       = azurerm_linux_web_app.main.default_hostname
 }
 
-output "autoscale_setting_id" {
-  description = "ID of the autoscale setting"
-  value       = azurerm_monitor_autoscale_setting.main.id
-}
+# output "autoscale_setting_id" {
+#   description = "ID of the autoscale setting"
+#   value       = azurerm_monitor_autoscale_setting.main.id
+# }
 
-output "autoscale_setting_name" {
-  description = "Name of the autoscale setting"
-  value       = azurerm_monitor_autoscale_setting.main.name
-}
+# output "autoscale_setting_name" {
+#   description = "Name of the autoscale setting"
+#   value       = azurerm_monitor_autoscale_setting.main.name
+# }
 
 output "region_info" {
   description = "Information about the region this module deployed to"

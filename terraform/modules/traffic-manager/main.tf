@@ -56,27 +56,16 @@ resource "azurerm_traffic_manager_azure_endpoint" "europe" {
   weight             = 100
   priority           = 2
   
-  # Geographic mapping for Europe endpoint
+  # Geographic mapping for Europe + Asia Pacific
   geo_mappings = [
+    # Europe & Middle East
     "JO", "AE", "SA", "EG", "LB", "SY", "IQ", "IR", "TR", 
-    "GR", "IT", "FR", "DE", "GB", "ES", "PT", "NL", "BE", 
-    "CH", "AT", "PL", "CZ", "HU", "RO", "BG", "HR", "SI", 
-    "SK", "EE", "LV", "LT", "FI", "SE", "NO", "DK", "IS", 
-    "IE", "MT", "CY", "LU", "MC", "AD", "SM", "VA", "LI"
-  ]
-}
-
-# India Endpoint
-resource "azurerm_traffic_manager_azure_endpoint" "india" {
-  name               = "endpoint-in-${var.environment}"
-  profile_id         = azurerm_traffic_manager_profile.main.id
-  target_resource_id = var.india_app_service_id
-  weight             = 100
-  priority           = 3
-  
-  # Geographic mapping for India endpoint
-  geo_mappings = [
-    "IN", "LK", "BD", "NP", "PK", "AF", "MY", "SG", "ID", 
+    "GR", "IT", "FR", "DE", "GB", "ES", "PT", "NL", "BE",
+    "CH", "AT", "PL", "CZ", "HU", "RO", "BG", "HR", "SI",
+    "SK", "EE", "LV", "LT", "FI", "SE", "NO", "DK", "IS",
+    "IE", "MT", "CY", "LU", "MC", "AD", "SM", "VA", "LI",
+    # Asia Pacific (from deleted India endpoint)
+    "IN", "LK", "BD", "NP", "PK", "AF", "MY", "SG", "ID",
     "TH", "VN", "KH", "LA", "MM", "PH", "BN", "TL"
   ]
 }

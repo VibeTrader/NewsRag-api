@@ -71,13 +71,7 @@ curl -X POST "http://localhost:8000/search" \
 ### Generate Market Summary (Text Format)
 
 ```bash
-curl -X POST "http://localhost:8000/summarize" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "forex news",
-    "limit": 5,
-    "format": "text"
-  }'
+
 ```
 
 ### Generate Market Summary (JSON Format)

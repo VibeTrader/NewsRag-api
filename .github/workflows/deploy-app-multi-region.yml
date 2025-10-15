@@ -16,7 +16,6 @@ permissions:
 jobs:
   build:
     name: 'Build Application'
-    if: github.repository == 'VibeTrader/NewsRag-api'
     runs-on: ubuntu-latest
     
     steps:

@@ -109,10 +109,15 @@ class LangChainForexSummarizer:
         
         # Initialize the LLM with proper error handling
         try:
+            # Try both environment variable names for API key
+            api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("Missing API key: Set either AZURE_OPENAI_API_KEY or OPENAI_API_KEY")
+                
             self.llm = AzureChatOpenAI(
                 deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-                api_key=os.getenv("OPENAI_API_KEY"),
+                api_key=api_key,
                 azure_endpoint=os.getenv("OPENAI_BASE_URL"),
                 temperature=temperature,
                 max_tokens=max_tokens,

@@ -53,6 +53,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Simple health endpoint for Traffic Manager (no dependencies)
+@app.get("/health/simple")
+async def simple_health_check():
+    """Simple health check that doesn't depend on external services - for Traffic Manager."""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "environment": os.getenv("ENVIRONMENT", "unknown"),
+        "region": os.getenv("DEPLOYMENT_REGION", "unknown"),
+        "version": "1.0.0"
+    }
+
+# Main health endpoint (what Traffic Manager expects)
+@app.get("/health")
+async def health_check():
+    """Main health check endpoint for Traffic Manager."""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "environment": os.getenv("ENVIRONMENT", "unknown"),
+        "region": os.getenv("DEPLOYMENT_REGION", "unknown"),
+        "version": "1.0.0"
+    }
+
+# Root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": "NewsRag API is running",
+        "environment": os.getenv("ENVIRONMENT", "unknown"), 
+        "region": os.getenv("DEPLOYMENT_REGION", "unknown"),
+        "health_endpoint": "/health/simple"
+    }
+
 # Initialize Application Insights monitoring
 monitor = AppInsightsMonitor(app)
 
@@ -704,11 +739,15 @@ async def performance_metrics():
             "timestamp": datetime.now().isoformat()
         }
 
-# Import the Langfuse debugging endpoint
-from langfuse_test_endpoint import router as langfuse_test_router
-
-# Add the Langfuse testing router
-app.include_router(langfuse_test_router, prefix="/langfuse-debug", tags=["diagnostics"])
+# Import the Langfuse debugging endpoint (optional)
+try:
+    from langfuse_test_endpoint import router as langfuse_test_router
+    # Add the Langfuse testing router
+    app.include_router(langfuse_test_router, prefix="/langfuse-debug", tags=["diagnostics"])
+    logger.info("Langfuse debugging endpoint loaded successfully")
+except ImportError as e:
+    logger.warning(f"Langfuse test endpoint not available: {e}")
+    langfuse_test_router = None
 
 # Add a direct endpoint for even more detailed Langfuse debugging
 @app.get("/langfuse-direct-test")

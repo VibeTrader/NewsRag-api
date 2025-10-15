@@ -1,0 +1,314 @@
+name: 'Deploy Infrastructure (Multi-Region)'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: '1.5.0'
+  WORKING_DIRECTORY: './terraform'
+  TF_VAR_environment: 'prod'
+  TF_VAR_app_service_plan_sku: 'B1'
+  TF_VAR_app_service_plan_tier: 'Basic'
+  TF_VAR_min_instances: '1'
+  TF_VAR_max_instances: '3'
+  TF_VAR_health_check_path: '/health'
+  TF_VAR_alert_email: 'haripriyaveluchamy@aity.dev'
+  TF_VAR_log_retention_days: '30'
+  TF_VAR_existing_resource_group_name: 'vibetrader-RAG-rg'
+  
+  # App settings
+  TF_VAR_app_settings: |
+    {
+      WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
+      WEBSITES_PORT = "8000"
+      SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
+      ENABLE_ORYX_BUILD = "true"
+      PYTHON_VERSION = "3.12"
+      ENVIRONMENT = "production"
+      HEALTH_CHECK_ENABLED = "true"
+      API_HOST = "0.0.0.0"
+      API_PORT = "8000"
+      AZURE_OPENAI_API_VERSION = "2024-02-01"
+      AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
+      EMBEDDING_DIMENSION = "3072"
+      QDRANT_COLLECTION_NAME = "news_articles"
+      CACHE_TTL = "3600"
+      DEFAULT_ARTICLE_LIMIT = "50"
+      MAX_ARTICLE_CONTENT_CHARS = "10000"
+      MAX_CHUNK_SIZE = "1000"
+      SUMMARY_CACHE_SIZE = "1000"
+      SUMMARY_CACHE_TTL = "3600"
+    }
+
+jobs:
+  terraform:
+    name: 'Terraform Multi-Region'
+    runs-on: ubuntu-latest
+    environment: production
+    
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    
+    outputs:
+      traffic_manager_url: ${{ steps.terraform_outputs.outputs.traffic_manager_url }}
+      us_app_service_name: ${{ steps.terraform_outputs.outputs.us_app_service_name }}
+      europe_app_service_name: ${{ steps.terraform_outputs.outputs.europe_app_service_name }}
+      india_app_service_name: ${{ steps.terraform_outputs.outputs.india_app_service_name }}
+      resource_group_name: ${{ steps.terraform_outputs.outputs.resource_group_name }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set Terraform Environment Variables
+      run: |
+        echo "Setting up Terraform authentication..."
+        echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
+        echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV  
+        echo "ARM_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
+        echo "ARM_USE_AZUREAD=true" >> $GITHUB_ENV
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Ensure Backend Storage Exists
+      run: |
+        echo "Ensuring backend storage is ready..."
+        
+        # Create resource group if it doesn't exist
+        az group create --name terraform-state-rg --location eastus --output none || true
+        
+        # Create storage account if it doesn't exist
+        if ! az storage account show --name tfstatevraag --resource-group terraform-state-rg >/dev/null 2>&1; then
+          echo "Creating storage account..."
+          az storage account create \
+            --name tfstatevraag \
+            --resource-group terraform-state-rg \
+            --location eastus \
+            --sku Standard_LRS \
+            --min-tls-version TLS1_2 \
+            --allow-blob-public-access false
+          echo "✓ Storage account created"
+        else
+          echo "✓ Storage account exists"
+        fi
+        
+        # Create container if it doesn't exist
+        if ! az storage container show --name terraform-state --account-name tfstatevraag --auth-mode login >/dev/null 2>&1; then
+          echo "Creating container..."
+          az storage container create \
+            --name terraform-state \
+            --account-name tfstatevraag \
+            --auth-mode login \
+            --public-access off
+          echo "✓ Container created"
+        else
+          echo "✓ Container exists"
+        fi
+
+    - name: Terraform Init
+      run: |
+        echo "Getting storage account key for backend..."
+        STORAGE_KEY=$(az storage account keys list \
+          --resource-group terraform-state-rg \
+          --account-name tfstatevraag \
+          --query '[0].value' \
+          --output tsv)
+        
+        echo "Initializing Terraform backend..."
+        terraform init \
+          -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+          -backend-config="resource_group_name=terraform-state-rg" \
+          -backend-config="storage_account_name=tfstatevraag" \
+          -backend-config="container_name=terraform-state" \
+          -backend-config="key=newsraag-prod.tfstate" \
+          -backend-config="access_key=$STORAGE_KEY"
+        
+        echo "✓ Terraform initialized successfully"
+
+    - name: Handle Autoscale Settings
+      run: |
+        RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
+        echo "Managing autoscale settings in $RESOURCE_GROUP..."
+        
+        declare -A MODULE_PATHS=(
+          ["us"]="module.app_services[\"us\"].azurerm_monitor_autoscale_setting.main"
+          ["eu"]="module.app_services[\"europe\"].azurerm_monitor_autoscale_setting.main"
+          ["in"]="module.app_services[\"india\"].azurerm_monitor_autoscale_setting.main"
+        )
+        
+        for REGION in "us" "eu" "in"; do
+          AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
+          echo "Checking for $AUTOSCALE_NAME..."
+          
+          AUTOSCALE_ID=$(az monitor autoscale setting show --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --query id -o tsv 2>/dev/null || echo "")
+          
+          if [ -n "$AUTOSCALE_ID" ]; then
+            echo "Found existing autoscale setting: $AUTOSCALE_NAME"
+            
+            if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
+              echo "Deleting autoscale setting $AUTOSCALE_NAME before destroy..."
+              az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes
+            else
+              echo "Importing $AUTOSCALE_NAME into Terraform state..."
+              terraform import ${MODULE_PATHS[$REGION]} $AUTOSCALE_ID || echo "Import failed, continue anyway"
+            fi
+          else
+            echo "No existing autoscale setting found for $AUTOSCALE_NAME"
+          fi
+        done
+
+    - name: Terraform Plan
+      if: github.event.inputs.action != 'destroy'
+      run: |
+        echo "Creating deployment plan..."
+        terraform plan -out=tfplan
+
+    - name: Terraform Apply
+      if: github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.inputs.action != 'destroy')
+      run: |
+        echo "Applying Terraform configuration..."
+        terraform apply -auto-approve tfplan
+      
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "Running terraform destroy..."
+        
+        # Clean up autoscale settings first
+        RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
+        for REGION in "us" "eu" "in"; do
+          AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
+          echo "Force removing $AUTOSCALE_NAME..."
+          az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes 2>/dev/null || echo "Already removed"
+        done
+        
+        # Run destroy
+        terraform destroy -auto-approve
+        
+    - name: Get Terraform Outputs
+      if: github.event.inputs.action != 'destroy'
+      id: terraform_outputs
+      run: |
+        echo "Retrieving Terraform outputs..."
+        echo "traffic_manager_url=$(terraform output -raw traffic_manager_url)" >> $GITHUB_OUTPUT
+        echo "us_app_service_name=$(terraform output -raw us_app_service_name)" >> $GITHUB_OUTPUT
+        echo "europe_app_service_name=$(terraform output -raw europe_app_service_name)" >> $GITHUB_OUTPUT
+        echo "india_app_service_name=$(terraform output -raw india_app_service_name)" >> $GITHUB_OUTPUT
+        echo "resource_group_name=$(terraform output -raw existing_resource_group_name)" >> $GITHUB_OUTPUT
+
+  configure_app_settings:
+    name: 'Configure App Settings with Secrets'
+    needs: terraform
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
+    
+    strategy:
+      matrix:
+        region:
+          - name: "US"
+            app_name: ${{ needs.terraform.outputs.us_app_service_name }}
+            short_name: "us"
+            location: "East US"
+          - name: "Europe" 
+            app_name: ${{ needs.terraform.outputs.europe_app_service_name }}
+            short_name: "eu"
+            location: "North Europe"
+          - name: "India"
+            app_name: ${{ needs.terraform.outputs.india_app_service_name }}
+            short_name: "in"
+            location: "Central India"
+    
+    steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Configure App Settings for ${{ matrix.region.name }}
+      run: |
+        echo "🔧 Configuring app settings for ${{ matrix.region.name }} region..."
+        
+        az webapp config appsettings set \
+          --name ${{ matrix.region.app_name }} \
+          --resource-group ${{ needs.terraform.outputs.resource_group_name }} \
+          --settings \
+            DEPLOYMENT_REGION="${{ matrix.region.short_name }}" \
+            AZURE_REGION="${{ matrix.region.location }}" \
+            ENVIRONMENT="production" \
+            PORT="8000" \
+            API_HOST="0.0.0.0" \
+            API_PORT="8000" \
+            PYTHONUNBUFFERED="1" \
+            HEALTH_CHECK_ENABLED="true" \
+            WEBSITES_PORT="8000" \
+            WEBSITES_ENABLE_APP_SERVICE_STORAGE="false" \
+            SCM_DO_BUILD_DURING_DEPLOYMENT="true" \
+            ENABLE_ORYX_BUILD="true" \
+            OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            OPENAI_BASE_URL="${{ secrets.OPENAI_BASE_URL }}" \
+            AZURE_OPENAI_API_VERSION="2024-02-01" \
+            AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
+            AZURE_OPENAI_EMBEDDING_DEPLOYMENT="${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}" \
+            AZURE_OPENAI_EMBEDDING_MODEL="${{ secrets.AZURE_OPENAI_EMBEDDING_MODEL }}" \
+            EMBEDDING_DIMENSION="3072" \
+            QDRANT_URL="${{ secrets.QDRANT_URL }}" \
+            QDRANT_API_KEY="${{ secrets.QDRANT_API_KEY }}" \
+            QDRANT_COLLECTION_NAME="${{ secrets.QDRANT_COLLECTION_NAME }}" \
+            CACHE_TTL="3600" \
+            DEFAULT_ARTICLE_LIMIT="50" \
+            MAX_ARTICLE_CONTENT_CHARS="10000" \
+            MAX_CHUNK_SIZE="1000" \
+            SUMMARY_CACHE_SIZE="1000" \
+            SUMMARY_CACHE_TTL="3600"
+
+        echo "✅ App settings configured for ${{ matrix.region.name }}"
+
+  infrastructure_complete:
+    name: 'Infrastructure Deployment Complete'
+    needs: [terraform, configure_app_settings]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
+    
+    steps:
+    - name: Infrastructure Deployment Summary
+      run: |
+        echo "🎉 Infrastructure deployment completed successfully!"
+        echo "📊 Infrastructure Summary:"
+        echo "  • Traffic Manager URL: ${{ needs.terraform.outputs.traffic_manager_url }}"
+        echo "  • US App Service: ${{ needs.terraform.outputs.us_app_service_name }}"
+        echo "  • Europe App Service: ${{ needs.terraform.outputs.europe_app_service_name }}"
+        echo "  • India App Service: ${{ needs.terraform.outputs.india_app_service_name }}"
+        echo "  • Resource Group: ${{ needs.terraform.outputs.resource_group_name }}"
+        echo ""
+        echo "✅ Infrastructure is ready for app deployment!"
+        echo "✅ App settings configured with secrets for all regions!"
+        echo "🚀 Your apps should now start successfully with proper configuration!"

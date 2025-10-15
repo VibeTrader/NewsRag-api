@@ -1,0 +1,112 @@
+# ============================================
+# Production Environment Configuration Template
+# This is a TEMPLATE file - copy to prod.tfvars and add your actual values
+# ============================================
+
+# Environment configuration
+environment = "prod"
+
+# App Service tier configuration  
+app_service_plan_sku  = "B1"    # Basic tier - upgrade to S1/P1v2 for production load
+app_service_plan_tier = "Basic"
+
+# Scaling configuration
+min_instances = 1
+max_instances = 3  # Increase for higher traffic (up to 10 for Standard tier)
+
+# Health check endpoint
+health_check_path = "/health"
+
+# Alert configuration  
+alert_email = "your-email@yourdomain.com"  # CHANGE THIS
+slack_webhook_url = ""  # Add your Slack webhook URL if you have one
+
+# Log Analytics retention
+log_retention_days = 30
+
+# Application Settings Template
+app_settings = {
+  # ============================================
+  # Platform Settings (managed by Terraform/Azure)
+  # ============================================
+  WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
+  WEBSITES_PORT                       = "8000"
+  SCM_DO_BUILD_DURING_DEPLOYMENT      = "true"
+  ENABLE_ORYX_BUILD                   = "true"
+  
+  # Python configuration
+  PYTHON_VERSION     = "3.12"
+  PYTHONUNBUFFERED   = "1"
+  PORT               = "8000"
+  
+  # Application environment
+  ENVIRONMENT = "production"
+  
+  # FastAPI specific
+  API_HOST = "0.0.0.0"
+  API_PORT = "8000"
+  
+  # Health check
+  HEALTH_CHECK_ENABLED = "true"
+  
+  # ============================================
+  # Non-Sensitive Application Configuration
+  # Replace these with your actual values
+  # ============================================
+  
+  # Azure OpenAI Configuration (non-sensitive values)
+  AZURE_OPENAI_API_VERSION         = "2024-02-01"                    # Your API version
+  AZURE_OPENAI_DEPLOYMENT          = "your-gpt-deployment-name"      # CHANGE THIS
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT = "your-embedding-deployment"    # CHANGE THIS  
+  AZURE_OPENAI_EMBEDDING_MODEL     = "text-embedding-3-large"        # Your model
+  
+  # Embedding Configuration
+  EMBEDDING_DIMENSION = "3072"  # Adjust based on your embedding model
+  
+  # Qdrant Configuration (non-sensitive)
+  QDRANT_COLLECTION_NAME = "news_articles"  # Your collection name
+  
+  # Azure Storage Configuration (non-sensitive)  
+  AZ_ACCOUNT_NAME    = "your-storage-account-name"    # CHANGE THIS
+  AZ_CONTAINER_NAME  = "your-container-name"          # CHANGE THIS
+  
+  # Cache Configuration
+  CACHE_TTL           = "3600"      # 1 hour
+  SUMMARY_CACHE_SIZE  = "1000"      # Number of cached summaries
+  SUMMARY_CACHE_TTL   = "3600"      # 1 hour
+  
+  # Article Processing Configuration  
+  DEFAULT_ARTICLE_LIMIT     = "50"       # Default number of articles to return
+  MAX_ARTICLE_CONTENT_CHARS = "10000"    # Max characters per article
+  MAX_CHUNK_SIZE           = "1000"      # Max chunk size for processing
+  
+  # Langfuse Configuration (non-sensitive, optional)
+  # LANGFUSE_HOST = "https://cloud.langfuse.com"  # Uncomment if using Langfuse
+  
+  # ============================================
+  # Regional Settings (automatically populated by Terraform)
+  # ============================================
+  # These are automatically added by the modules:
+  # DEPLOYMENT_REGION - Set to "us", "eu", or "in" per region
+  # AZURE_REGION - Set to region location per region
+  # APPINSIGHTS_INSTRUMENTATIONKEY - From shared Application Insights
+  # APPLICATIONINSIGHTS_CONNECTION_STRING - From shared Application Insights
+  # ============================================
+}
+
+# ============================================
+# SENSITIVE VALUES - DO NOT PUT HERE!
+# ============================================
+# The following should be stored in GitHub Secrets, NOT in this file:
+#
+# GitHub Secret Name              → Environment Variable Name
+# OPENAI_API_KEY                 → OPENAI_API_KEY
+# AZURE_OPENAI_ENDPOINT          → OPENAI_BASE_URL  
+# QDRANT_URL                     → QDRANT_URL
+# QDRANT_API_KEY                 → QDRANT_API_KEY
+# AZ_BLOB_ACCESS_KEY             → AZ_BLOB_ACCESS_KEY
+# LANGFUSE_PUBLIC_KEY            → LANGFUSE_PUBLIC_KEY
+# LANGFUSE_SECRET_KEY            → LANGFUSE_SECRET_KEY
+#
+# These are injected by the GitHub Actions pipeline during deployment
+# ============================================

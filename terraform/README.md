@@ -1,41 +1,50 @@
-# 🌍 NewsRag API - Complete Multi-Region Infrastructure
+# 🌍 NewsRag API - Multi-Region Infrastructure with Azure Front Door
 
-This Terraform configuration creates a **complete fresh multi-region deployment** of your NewsRag FastAPI application across 3 regions with full monitoring and alerting.
+This Terraform configuration creates a **production-ready multi-region deployment** of your NewsRag FastAPI application across 3 regions with Azure Front Door CDN, full monitoring, and alerting.
 
-## 🏗️ Complete Infrastructure Overview
+## 🏗️ Infrastructure Overview
 
 ### 🌍 **Global Resources** (Shared)
 | Resource | Name | Description |
 |----------|------|-------------|
-| **Resource Group** | `rg-newsraag-global-prod` | Houses all global resources |
-| **Log Analytics** | `logs-newsraag-prod` | 30-day retention, PerGB2018 pricing |
-| **Application Insights** | `insights-newsraag-prod` | Brand new monitoring solution |
-| **Traffic Manager** | `tm-newsraag-prod` | Geographic routing with health checks |
+| **Resource Group** | `vibetrader-RAG-rg` | Existing resource group (reused) |
+| **Log Analytics** | `logs-newsraag-shared-prod` | 30-day retention, PerGB2018 pricing |
+| **Application Insights** | `insights-newsraag-shared-prod` | Unified monitoring across all regions |
+| **Azure Front Door** | `fd-newsraag-prod` | **NEW** Global CDN with HTTPS, health probes, WAF (optional) |
 | **Action Group** | `ag-newsraag-prod` | Email alerts to haripriyaveluchamy@aity.dev |
 
-### 🇺🇸 **US Region** (`rg-newsraag-us-prod`)
+### 🇺🇸 **US Region** (East US)
 | Resource | Name | Specs |
 |----------|------|-------|
-| **App Service Plan** | `plan-newsraag-us-prod` | Linux, Basic B1, Auto-scale 1-3 instances |
+| **App Service Plan** | `plan-newsraag-us-prod` | Linux, Basic B1 (upgradable) |
 | **Web App** | `newsraag-us-prod` | Python 3.12, FastAPI ready |
 | **Auto-scaling** | `autoscale-newsraag-us-prod` | CPU/Memory based scaling |
 | **URL** | `newsraag-us-prod.azurewebsites.net` | Direct regional access |
 
-### 🇪🇺 **Europe Region** (`rg-newsraag-eu-prod`)  
+### 🇪🇺 **Europe Region** (North Europe)
 | Resource | Name | Specs |
 |----------|------|-------|
-| **App Service Plan** | `plan-newsraag-eu-prod` | Linux, Basic B1, Auto-scale 1-3 instances |
+| **App Service Plan** | `plan-newsraag-eu-prod` | Linux, Basic B1 (upgradable) |
 | **Web App** | `newsraag-eu-prod` | Python 3.12, FastAPI ready |
 | **Auto-scaling** | `autoscale-newsraag-eu-prod` | CPU/Memory based scaling |
 | **URL** | `newsraag-eu-prod.azurewebsites.net` | Direct regional access |
 
-### 🇮🇳 **India Region** (`rg-newsraag-in-prod`)
+### 🇮🇳 **India Region** (Central India)
 | Resource | Name | Specs |
 |----------|------|-------|
-| **App Service Plan** | `plan-newsraag-in-prod` | Linux, Basic B1, Auto-scale 1-3 instances |
+| **App Service Plan** | `plan-newsraag-in-prod` | Linux, Basic B1 (upgradable) |
 | **Web App** | `newsraag-in-prod` | Python 3.12, FastAPI ready |
 | **Auto-scaling** | `autoscale-newsraag-in-prod` | CPU/Memory based scaling |
 | **URL** | `newsraag-in-prod.azurewebsites.net` | Direct regional access |
+
+## 🚀 **Azure Front Door Features**
+- ✅ **Global CDN** - Edge locations worldwide
+- ✅ **Automatic HTTPS** - Managed SSL certificates
+- ✅ **Intelligent Routing** - Latency + health-based
+- ✅ **DDoS Protection** - Built-in security
+- ✅ **WAF** - Web Application Firewall (Premium tier)
+- ✅ **Health Probes** - Automatic failover
+- ✅ **Caching** - Improved performance
 
 ## 🔔 **Comprehensive Monitoring** (15+ Alert Rules)
 

@@ -37,15 +37,20 @@ output "shared_application_insights_connection_string" {
   sensitive   = true
 }
 
-# Traffic Manager
-output "traffic_manager_fqdn" {
-  description = "FQDN of the Traffic Manager endpoint - Your main global URL"
-  value       = module.traffic_manager.fqdn
+# Azure Front Door (CDN)
+output "frontdoor_url" {
+  description = "HTTPS URL of the Front Door endpoint - Your main global URL"
+  value       = module.front_door.frontdoor_endpoint_url
 }
 
-output "traffic_manager_url" {
-  description = "Complete URL of the Traffic Manager endpoint"
-  value       = "https://${module.traffic_manager.fqdn}"
+output "frontdoor_hostname" {
+  description = "Hostname of the Front Door endpoint"
+  value       = module.front_door.frontdoor_endpoint_hostname
+}
+
+output "frontdoor_name" {
+  description = "Name of the Front Door profile"
+  value       = module.front_door.frontdoor_name
 }
 
 # Dynamic outputs for all regions using for_each
@@ -105,8 +110,8 @@ output "resources_created" {
   value = {
     shared_resources = {
       log_analytics_workspace = azurerm_log_analytics_workspace.shared.name
-      application_insights     = azurerm_application_insights.shared.name
-      traffic_manager         = module.traffic_manager.profile_name
+      application_insights    = azurerm_application_insights.shared.name
+      front_door             = module.front_door.frontdoor_name
     }
     
     # Dynamic region resources
@@ -124,9 +129,9 @@ output "resources_created" {
 output "deployment_summary" {
   description = "Complete summary of your multi-region deployment using existing RG"
   value = {
-    environment               = var.environment
-    existing_resource_group   = data.azurerm_resource_group.existing.name
-    traffic_manager_url       = "https://${module.traffic_manager.fqdn}"
+    environment             = var.environment
+    existing_resource_group = data.azurerm_resource_group.existing.name
+    frontdoor_url          = module.front_door.frontdoor_endpoint_url
     shared_application_insights = azurerm_application_insights.shared.name
     
     # Dynamic regions deployed
@@ -151,7 +156,7 @@ output "quick_urls" {
   description = "Quick access URLs for testing"
   value = merge(
     {
-      "🌍 Global (Traffic Manager)" = "https://${module.traffic_manager.fqdn}"
+      "🌍 Global (Front Door CDN)" = module.front_door.frontdoor_endpoint_url
     },
     # Dynamic region URLs
     {
@@ -188,7 +193,7 @@ output "regions_config" {
 output "region_urls_formatted" {
   description = "Formatted list of all region URLs for easy copying"
   value = concat([
-    "🌍 Global: https://${module.traffic_manager.fqdn}"
+    "🌍 Global: ${module.front_door.frontdoor_endpoint_url}"
   ], [
     for region_key, region_config in local.regions :
     "${region_key == "us" ? "🇺🇸" : region_key == "europe" ? "🇪🇺" : "🇮🇳"} ${title(region_key)} (${region_config.location}): ${module.app_services[region_key].app_service_url}"

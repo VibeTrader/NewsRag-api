@@ -129,3 +129,15 @@ variable "enable_plan_metrics" {
   type        = bool
   default     = false # Set to true when you upgrade to Standard/Premium
 }
+
+# Azure Front Door Configuration
+variable "frontdoor_sku" {
+  description = "SKU for Azure Front Door (Standard_AzureFrontDoor or Premium_AzureFrontDoor)"
+  type        = string
+  default     = "Standard_AzureFrontDoor" # ~$10/mo, use Premium for WAF (~$35/mo)
+  
+  validation {
+    condition     = contains(["Standard_AzureFrontDoor", "Premium_AzureFrontDoor"], var.frontdoor_sku)
+    error_message = "SKU must be either Standard_AzureFrontDoor or Premium_AzureFrontDoor"
+  }
+}

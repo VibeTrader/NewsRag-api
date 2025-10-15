@@ -81,29 +81,27 @@ module "app_services" {
   common_tags = local.common_tags
 }
 
-# Traffic Manager for global load balancing
-module "traffic_manager" {
-  source = "./modules/traffic-manager"
+# Azure Front Door for global CDN and load balancing
+module "front_door" {
+  source = "./modules/front-door"
   
-  project_name         = local.project_name
-  environment          = local.environment
-  resource_group_name  = data.azurerm_resource_group.existing.name
+  project_name        = local.project_name
+  environment         = local.environment
+  resource_group_name = data.azurerm_resource_group.existing.name
   
-  # Pass all app service endpoints as required by module
-  existing_app_service_id   = module.app_services["us"].app_service_id
-  existing_app_service_name = module.app_services["us"].app_service_name
+  # SKU: Standard_AzureFrontDoor (~$10/mo) or Premium_AzureFrontDoor (~$35/mo with WAF)
+  frontdoor_sku = var.frontdoor_sku
   
-  europe_app_service_id   = module.app_services["europe"].app_service_id
-  europe_app_service_name = module.app_services["europe"].app_service_name
-  
-  india_app_service_id   = module.app_services["india"].app_service_id
-  india_app_service_name = module.app_services["india"].app_service_name
+  # Pass all app service hostnames
+  us_app_service_hostname    = module.app_services["us"].app_service_hostname
+  eu_app_service_hostname    = module.app_services["europe"].app_service_hostname
+  india_app_service_hostname = module.app_services["india"].app_service_hostname
   
   # Health check configuration
   health_check_path = var.health_check_path
   
-  # Use shared Application Insights for availability tests
-  application_insights_id = azurerm_application_insights.shared.id
+  # Optional custom domain (leave empty if not using)
+  custom_domain = var.custom_domain
   
   common_tags = local.common_tags
 }

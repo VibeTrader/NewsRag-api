@@ -61,6 +61,7 @@ env:
 jobs:
   terraform:
     name: 'Terraform Multi-Region'
+    if: github.repository == 'VibeTrader/NewsRag-api'
     runs-on: ubuntu-latest
     environment: production
     
@@ -153,38 +154,6 @@ jobs:
         
         echo "✓ Terraform initialized successfully"
 
-    - name: Handle Autoscale Settings
-      run: |
-        RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
-        echo "Managing autoscale settings in $RESOURCE_GROUP..."
-        
-        declare -A MODULE_PATHS=(
-          ["us"]="module.app_services[\"us\"].azurerm_monitor_autoscale_setting.main"
-          ["eu"]="module.app_services[\"europe\"].azurerm_monitor_autoscale_setting.main"
-          ["in"]="module.app_services[\"india\"].azurerm_monitor_autoscale_setting.main"
-        )
-        
-        for REGION in "us" "eu" "in"; do
-          AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
-          echo "Checking for $AUTOSCALE_NAME..."
-          
-          AUTOSCALE_ID=$(az monitor autoscale setting show --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --query id -o tsv 2>/dev/null || echo "")
-          
-          if [ -n "$AUTOSCALE_ID" ]; then
-            echo "Found existing autoscale setting: $AUTOSCALE_NAME"
-            
-            if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
-              echo "Deleting autoscale setting $AUTOSCALE_NAME before destroy..."
-              az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes
-            else
-              echo "Importing $AUTOSCALE_NAME into Terraform state..."
-              terraform import ${MODULE_PATHS[$REGION]} $AUTOSCALE_ID || echo "Import failed, continue anyway"
-            fi
-          else
-            echo "No existing autoscale setting found for $AUTOSCALE_NAME"
-          fi
-        done
-
     - name: Terraform Plan
       if: github.event.inputs.action != 'destroy'
       run: |
@@ -227,9 +196,9 @@ jobs:
   configure_app_settings:
     name: 'Configure App Settings with Secrets'
     needs: terraform
+    if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
     runs-on: ubuntu-latest
     environment: production
-    if: github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
     
     strategy:
       matrix:
@@ -295,8 +264,8 @@ jobs:
   infrastructure_complete:
     name: 'Infrastructure Deployment Complete'
     needs: [terraform, configure_app_settings]
+    if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
     runs-on: ubuntu-latest
-    if: github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
     
     steps:
     - name: Infrastructure Deployment Summary

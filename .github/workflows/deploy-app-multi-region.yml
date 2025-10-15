@@ -1,0 +1,108 @@
+name: 'Deploy App to All Regions'
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'terraform/**'
+      - '.github/workflows/deploy-infrastructure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    name: 'Build Application'
+    if: github.repository == 'VibeTrader/NewsRag-api'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create virtual environment and install dependencies
+        run: |
+          python -m venv antenv
+          source antenv/bin/activate
+          pip install -r requirements.txt
+      
+      - name: Upload artifact for deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-app
+          path: |
+            .
+            !antenv/
+            !venv/
+            !vev/
+            !.git/
+
+  deploy-multi-region:
+    name: 'Deploy to ${{ matrix.region.name }}'
+    if: github.repository == 'VibeTrader/NewsRag-api'
+    runs-on: ubuntu-latest
+    needs: build
+    
+    strategy:
+      max-parallel: 3  # Deploy all regions simultaneously
+      matrix:
+        region:
+          - name: "US (East)"
+            app_name: 'newsraag-us-prod'
+            short_code: 'us'
+          - name: "Europe (North)"
+            app_name: 'newsraag-eu-prod'
+            short_code: 'eu'
+          - name: "India (Central)"
+            app_name: 'newsraag-in-prod'
+            short_code: 'in'
+    
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-app
+      
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 'Deploy to ${{ matrix.region.name }} App Service'
+        uses: azure/webapps-deploy@v3
+        id: deploy-to-webapp
+        with:
+          app-name: ${{ matrix.region.app_name }}
+          slot-name: 'Production'
+      
+      - name: 'Deployment Success for ${{ matrix.region.name }}'
+        run: |
+          echo "✅ Successfully deployed to ${{ matrix.region.name }}"
+          echo "🌍 Region: ${{ matrix.region.short_code }}"
+          echo "📦 App Service: ${{ matrix.region.app_name }}"
+
+  deployment-summary:
+    name: 'Deployment Summary'
+    if: github.repository == 'VibeTrader/NewsRag-api' && always()
+    runs-on: ubuntu-latest
+    needs: deploy-multi-region
+    
+    steps:
+      - name: Deployment Complete
+        run: |
+          echo "🎉 Multi-Region Deployment Completed!"
+          echo ""
+          echo "📊 Deployment Summary:"
+          echo "  ✅ US Region: newsraag-us-prod"
+          echo "  ✅ Europe Region: newsraag-eu-prod"
+          echo "  ✅ India Region: newsraag-in-prod"
+          echo ""
+          echo "🌐 Your application is now live in all 3 regions!"

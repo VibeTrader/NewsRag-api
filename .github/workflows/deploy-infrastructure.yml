@@ -29,8 +29,8 @@ env:
   TF_VAR_environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
   TF_VAR_app_service_plan_sku: 'B1'
   TF_VAR_app_service_plan_tier: 'Basic'
-  TF_VAR_min_instances: '1'
-  TF_VAR_max_instances: '3'
+  # TF_VAR_min_instances: '1'
+  # TF_VAR_max_instances: '3'
   TF_VAR_health_check_path: '/health'
   TF_VAR_alert_email: 'haripriyaveluchamy@aity.dev'
   TF_VAR_log_retention_days: '30'
@@ -74,7 +74,6 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     
     outputs:
-      traffic_manager_url: ${{ steps.terraform_outputs.outputs.traffic_manager_url }}
       us_app_service_name: ${{ steps.terraform_outputs.outputs.us_app_service_name }}
       europe_app_service_name: ${{ steps.terraform_outputs.outputs.europe_app_service_name }}
       india_app_service_name: ${{ steps.terraform_outputs.outputs.india_app_service_name }}
@@ -184,7 +183,6 @@ jobs:
       id: terraform_outputs
       run: |
         echo "Retrieving Terraform outputs..."
-        echo "traffic_manager_url=$(terraform output -raw traffic_manager_url)" >> $GITHUB_OUTPUT
         echo "us_app_service_name=$(terraform output -raw us_app_service_name)" >> $GITHUB_OUTPUT
         echo "europe_app_service_name=$(terraform output -raw europe_app_service_name)" >> $GITHUB_OUTPUT
         echo "india_app_service_name=$(terraform output -raw india_app_service_name)" >> $GITHUB_OUTPUT
@@ -258,7 +256,6 @@ jobs:
       run: |
         echo "🎉 Infrastructure deployment completed successfully!"
         echo "📊 Infrastructure Summary:"
-        echo "  • Traffic Manager URL: ${{ needs.terraform.outputs.traffic_manager_url }}"
         echo "  • US App Service: ${{ needs.terraform.outputs.us_app_service_name }}"
         echo "  • Europe App Service: ${{ needs.terraform.outputs.europe_app_service_name }}"
         echo "  • India App Service: ${{ needs.terraform.outputs.india_app_service_name }}"

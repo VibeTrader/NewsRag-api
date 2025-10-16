@@ -63,6 +63,13 @@ jobs:
         with:
           name: python-app
       
+      - name: Check app_name
+        run: |
+          if [ -z "${{ matrix.region.app_name }}" ]; then
+            echo "app_name is missing for region ${{ matrix.region.name }}"
+            exit 1
+          fi
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -73,7 +80,7 @@ jobs:
         id: deploy-to-webapp
         with:
           app-name: ${{ matrix.region.app_name }}
-          slot-name: 'Production'
+          slot-name: ${{ github.ref == 'refs/heads/main' && 'Production' || 'dev' }}
       
       - name: 'Deployment Success for ${{ matrix.region.name }}'
         run: |

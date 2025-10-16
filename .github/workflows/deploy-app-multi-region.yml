@@ -55,14 +55,14 @@ jobs:
     strategy:
       max-parallel: 3  # Deploy all regions simultaneously
       matrix:
-        region: ${{ github.ref == 'refs/heads/main' && toJson([
-          { "name": "US (East)", "app_name": "newsraag-us-prod", "short_code": "us" },
-          { "name": "Europe (North)", "app_name": "newsraag-eu-prod", "short_code": "eu" },
-          { "name": "India (Central)", "app_name": "newsraag-in-prod", "short_code": "in" }
-        ]) || toJson([
-          { "name": "US (East)", "app_name": "newsraag-us-dev", "short_code": "us" },
-          { "name": "Europe (North)", "app_name": "newsraag-eu-dev", "short_code": "eu" }
-        ]) }}
+        region: ${{ (github.ref == 'refs/heads/main') && fromJson('[
+          {"name": "US (East)", "app_name": "newsraag-us-prod", "short_code": "us"},
+          {"name": "Europe (North)", "app_name": "newsraag-eu-prod", "short_code": "eu"},
+          {"name": "India (Central)", "app_name": "newsraag-in-prod", "short_code": "in"}
+        ]') || fromJson('[
+          {"name": "US (East)", "app_name": "newsraag-us-dev", "short_code": "us"},
+          {"name": "Europe (North)", "app_name": "newsraag-eu-dev", "short_code": "eu"}
+        ]') }}
     
     steps:
       - name: Download artifact

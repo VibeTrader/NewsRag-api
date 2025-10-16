@@ -101,7 +101,7 @@ module "front_door" {
   # Pass all app service hostnames
   us_app_service_hostname    = module.app_services["us"].app_service_hostname
   eu_app_service_hostname    = module.app_services["europe"].app_service_hostname
-  india_app_service_hostname = module.app_services["india"].app_service_hostname
+  india_app_service_hostname = try(module.app_services["india"].app_service_hostname, null)
   
   # Health check configuration
   health_check_path = var.health_check_path

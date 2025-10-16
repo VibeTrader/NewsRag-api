@@ -83,18 +83,20 @@ resource "azurerm_cdn_frontdoor_origin" "eu" {
 }
 
 # India Origin
+# Only create the India origin if the variable is set at plan time (workaround for count limitation)
 resource "azurerm_cdn_frontdoor_origin" "india" {
+  count = var.environment == "prod" ? 1 : 0
   name                          = "india-origin"
   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.main.id
-  
+
   enabled                        = true
   host_name                      = var.india_app_service_hostname
   http_port                      = 80
   https_port                     = 443
-  origin_host_header            = var.india_app_service_hostname
+  origin_host_header              = var.india_app_service_hostname
   priority                       = 1
   weight                         = 1000
-  
+
   certificate_name_check_enabled = true
 }
 
@@ -106,7 +108,8 @@ resource "azurerm_cdn_frontdoor_route" "main" {
   cdn_frontdoor_origin_ids      = [
     azurerm_cdn_frontdoor_origin.us.id,
     azurerm_cdn_frontdoor_origin.eu.id,
-    azurerm_cdn_frontdoor_origin.india.id
+    # Only include India origin if it exists
+    length(azurerm_cdn_frontdoor_origin.india) > 0 ? azurerm_cdn_frontdoor_origin.india[0].id : null
   ]
   
   enabled = true

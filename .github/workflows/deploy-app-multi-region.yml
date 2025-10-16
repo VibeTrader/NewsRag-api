@@ -55,7 +55,7 @@ jobs:
     strategy:
       max-parallel: 3  # Deploy all regions simultaneously
       matrix:
-        region: ${{ fromJson(github.ref == 'refs/heads/main' && format('[{{"name":"US","app_name":"{0}","short_name":"us","location":"East US"}},{{"name":"Europe","app_name":"{1}","short_name":"eu","location":"North Europe"}},{{"name":"India","app_name":"{2}","short_name":"in","location":"Central India"}}]', needs.terraform.outputs.us_app_service_name, needs.terraform.outputs.europe_app_service_name, needs.terraform.outputs.india_app_service_name) || format('[{{"name":"US","app_name":"{0}","short_name":"us","location":"East US"}},{{"name":"Europe","app_name":"{1}","short_name":"eu","location":"North Europe"}}]', needs.terraform.outputs.us_app_service_name, needs.terraform.outputs.europe_app_service_name)) }}
+        region: ${{ fromJson(github.ref == 'refs/heads/main' && '[{"name":"US","app_name":"newsraag-us-prod","short_name":"us","location":"East US"},{"name":"Europe","app_name":"newsraag-eu-prod","short_name":"eu","location":"North Europe"},{"name":"India","app_name":"newsraag-in-prod","short_name":"in","location":"Central India"}]' || '[{"name":"US","app_name":"newsraag-us-dev","short_name":"us","location":"East US"},{"name":"Europe","app_name":"newsraag-eu-dev","short_name":"eu","location":"North Europe"}]') }}
     
     steps:
       - name: Download artifact
@@ -85,7 +85,7 @@ jobs:
       - name: 'Deployment Success for ${{ matrix.region.name }}'
         run: |
           echo "✅ Successfully deployed to ${{ matrix.region.name }}"
-          echo "🌍 Region: ${{ matrix.region.short_code }}"
+          echo "🌍 Region: ${{ matrix.region.short_name }}"
           echo "📦 App Service: ${{ matrix.region.app_name }}"
 
   deployment-summary:

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
     paths:
       - 'terraform/**'
   # Only allow workflow_dispatch (manual runs) from the main repo, not forks

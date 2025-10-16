@@ -6,14 +6,20 @@
 locals {
   project_name = "newsraag"
   environment  = var.environment
-  
+
   # Define all regions
-  regions = {
+  all_regions = {
     us      = { location = "East US", short_name = "us" }
     europe  = { location = "North Europe", short_name = "eu" }
     india   = { location = "Central India", short_name = "in" }
   }
-  
+
+  # Select regions based on environment
+  regions = var.environment == "prod" ? local.all_regions : {
+    us     = local.all_regions.us
+    europe = local.all_regions.europe
+  }
+
   # Common tags
   common_tags = {
     Environment = var.environment

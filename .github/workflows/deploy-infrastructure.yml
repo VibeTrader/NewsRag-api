@@ -200,10 +200,11 @@ jobs:
     
     strategy:
       matrix:
-        region: ${{ fromJson(env.TF_VAR_environment == 'prod'
-          ? '[{"name":"US","app_name":"${{ needs.terraform.outputs.us_app_service_name }}","short_name":"us","location":"East US"},{"name":"Europe","app_name":"${{ needs.terraform.outputs.europe_app_service_name }}","short_name":"eu","location":"North Europe"},{"name":"India","app_name":"${{ needs.terraform.outputs.india_app_service_name }}","short_name":"in","location":"Central India"}]'
-          : '[{"name":"US","app_name":"${{ needs.terraform.outputs.us_app_service_name }}","short_name":"us","location":"East US"},{"name":"Europe","app_name":"${{ needs.terraform.outputs.europe_app_service_name }}","short_name":"eu","location":"North Europe"}]'
-        ) }}
+        # Only include India region in prod, not dev
+        region: ${{ fromJson(
+          env.TF_VAR_environment == 'prod'
+            ? '[{"name":"US","app_name":"${{ needs.terraform.outputs.us_app_service_name }}","short_name":"us","location":"East US"},{"name":"Europe","app_name":"${{ needs.terraform.outputs.europe_app_service_name }}","short_name":"eu","location":"North Europe"},{"name":"India","app_name":"${{ needs.terraform.outputs.india_app_service_name }}","short_name":"in","location":"Central India"}]' : '[{"name":"US","app_name":"${{ needs.terraform.outputs.us_app_service_name }}","short_name":"us","location":"East US"},{"name":"Europe","app_name":"${{ needs.terraform.outputs.europe_app_service_name }}","short_name":"eu","location":"North Europe"}]'
+          ) }}
     
     steps:
     - name: Azure Login

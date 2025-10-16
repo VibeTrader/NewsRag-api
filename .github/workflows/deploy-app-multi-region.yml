@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
     paths-ignore:
       - 'terraform/**'
       - '.github/workflows/deploy-infrastructure.yml'
@@ -46,6 +47,7 @@ jobs:
 
   deploy-multi-region:
     name: 'Deploy to ${{ matrix.region.name }}'
+    # Only run multi-region deploy in the main repo, never in forks
     if: github.repository == 'VibeTrader/NewsRag-api'
     runs-on: ubuntu-latest
     needs: build
@@ -55,14 +57,14 @@ jobs:
       matrix:
         region:
           - name: "US (East)"
-            app_name: 'newsraag-us-prod'
-            short_code: 'us'
+            app_name: ${{ github.ref == 'refs/heads/main' && 'newsraag-us-prod' || 'newsraag-us-dev' }}
+            short_code: "us"
           - name: "Europe (North)"
-            app_name: 'newsraag-eu-prod'
-            short_code: 'eu'
+            app_name: ${{ github.ref == 'refs/heads/main' && 'newsraag-eu-prod' || 'newsraag-eu-dev' }}
+            short_code: "eu"
           - name: "India (Central)"
-            app_name: 'newsraag-in-prod'
-            short_code: 'in'
+            app_name: ${{ github.ref == 'refs/heads/main' && 'newsraag-in-prod' || '' }}
+            short_code: ${{ github.ref == 'refs/heads/main' && 'in' || '' }}
     
     steps:
       - name: Download artifact

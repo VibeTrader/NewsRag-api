@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'terraform/**'
+  # Only allow workflow_dispatch (manual runs) from the main repo, not forks
   workflow_dispatch:
     inputs:
       action:
@@ -24,7 +25,8 @@ permissions:
 env:
   TF_VERSION: '1.5.0'
   WORKING_DIRECTORY: './terraform'
-  TF_VAR_environment: 'prod'
+  # Set environment based on branch: 'prod' for main, 'dev' for dev
+  TF_VAR_environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
   TF_VAR_app_service_plan_sku: 'B1'
   TF_VAR_app_service_plan_tier: 'Basic'
   TF_VAR_min_instances: '1'
@@ -42,7 +44,7 @@ env:
       SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
       ENABLE_ORYX_BUILD = "true"
       PYTHON_VERSION = "3.12"
-      ENVIRONMENT = "production"
+      ENVIRONMENT = ${{ github.ref == 'refs/heads/main' && '"production"' || '"development"' }}
       HEALTH_CHECK_ENABLED = "true"
       API_HOST = "0.0.0.0"
       API_PORT = "8000"
@@ -61,6 +63,7 @@ env:
 jobs:
   terraform:
     name: 'Terraform Multi-Region'
+    # Only run infra jobs in the main repo, never in forks
     if: github.repository == 'VibeTrader/NewsRag-api'
     runs-on: ubuntu-latest
     environment: production
@@ -149,7 +152,7 @@ jobs:
           -backend-config="resource_group_name=terraform-state-rg" \
           -backend-config="storage_account_name=tfstatevraag" \
           -backend-config="container_name=terraform-state" \
-          -backend-config="key=newsraag-prod.tfstate" \
+          -backend-config="key=newsraag-${{ env.TF_VAR_environment }}.tfstate" \
           -backend-config="access_key=$STORAGE_KEY"
         
         echo "✓ Terraform initialized successfully"
@@ -167,7 +170,8 @@ jobs:
         terraform apply -auto-approve tfplan
       
     - name: Terraform Destroy
-      if: github.event.inputs.action == 'destroy'
+      # Only allow destroy from the main repo, never from forks
+      if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action == 'destroy'
       run: |
         echo "Running terraform destroy..."
         

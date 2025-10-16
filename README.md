@@ -158,3 +158,85 @@ If you encounter issues while using the API, consider the following steps:
 4.  **Review Logs**: Check the API logs for detailed error messages that can provide clues about the root cause of the issue.
 
 For more detailed information on the summarization feature, refer to the original `README-summarization.md` documentation.
+## Multi-Environment, Multi-Region Deployment Strategy
+
+### Overview
+
+This project supports both **development** and **production** environments, each with its own region set and isolated infrastructure state. All deployments are managed via GitHub Actions and Terraform.
+
+---
+
+### Environments & Regions
+
+- **Development (`dev` branch):**
+  - Deploys to 2 regions: US (East US) and Europe (North Europe)
+  - Used for validation and testing before production rollout
+
+- **Production (`main` branch):**
+  - Deploys to 3+ regions: US (East US), Europe (North Europe), India (Central India)
+  - Can be extended to more regions as needed
+
+---
+
+### Branching & Deployment Flow
+
+1. **Push to `dev` branch:**
+   - Triggers infrastructure and app deployment to the `dev` environment (2 regions).
+   - Uses a separate Terraform workspace and backend state (`newsraag-dev.tfstate`).
+
+2. **Validation in `dev`:**
+   - All changes are tested in the development environment.
+
+3. **Pull Request to `main`:**
+   - After successful validation, a PR is raised to merge `dev` into `main`.
+
+4. **Merge to `main`:**
+   - Triggers infrastructure and app deployment to the `prod` environment (all regions).
+   - Uses the production Terraform workspace and backend state (`newsraag-prod.tfstate`).
+
+---
+
+### How It Works
+
+- **Region Selection:**  
+  The set of regions is determined by the `environment` variable (`dev` or `prod`).  
+  - In `dev`, only US and Europe are deployed.
+  - In `prod`, all defined regions are deployed.
+
+- **Terraform Workspaces:**  
+  Each environment uses a separate workspace and backend state file for isolation.
+
+- **GitHub Actions:**  
+  - Workflow YAMLs dynamically set the environment and region matrix based on the branch.
+  - App Service names and other resources are suffixed with `-dev` or `-prod` as appropriate.
+
+---
+
+### Adding a New Region
+
+1. Add the region to the `all_regions` map in [`terraform/main.tf`](terraform/main.tf).
+2. It will be included in production automatically.  
+   To include in development, add it to the `regions` selection logic for `dev`.
+
+---
+
+### Summary Table
+
+| Branch   | Environment | Regions Deployed         | State File             |
+|----------|-------------|-------------------------|------------------------|
+| dev      | dev         | US, Europe              | newsraag-dev.tfstate   |
+| main     | prod        | US, Europe, India, ...  | newsraag-prod.tfstate  |
+
+---
+
+### Security
+
+- All secrets (Azure credentials, API keys) are managed via GitHub Secrets.
+- App settings and sensitive values are injected securely in the deployment workflows.
+
+---
+
+### Notes
+
+- All infrastructure and app changes should be validated in `dev` before merging to `main`.
+- The deployment process is fully automated and supports safe, staged rollouts.

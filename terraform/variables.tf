@@ -8,6 +8,10 @@ variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
   default     = "prod"
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "Environment must be either 'dev' or 'prod'."
+  }
 }
 variable "existing_resource_group_name" {
   description = "Name of the existing resource group to deploy into"

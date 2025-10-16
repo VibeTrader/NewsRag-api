@@ -90,13 +90,6 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Set Terraform Environment Variables
-      run: |
-        echo "Setting up Terraform authentication..."
-        echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
-        echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV  
-        echo "ARM_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
-        echo "ARM_USE_AZUREAD=true" >> $GITHUB_ENV
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -207,19 +200,11 @@ jobs:
     
     strategy:
       matrix:
-        region:
-          - name: "US"
-            app_name: ${{ needs.terraform.outputs.us_app_service_name }}
-            short_name: "us"
-            location: "East US"
-          - name: "Europe" 
-            app_name: ${{ needs.terraform.outputs.europe_app_service_name }}
-            short_name: "eu"
-            location: "North Europe"
-          - name: "India"
-            app_name: ${{ needs.terraform.outputs.india_app_service_name }}
-            short_name: "in"
-            location: "Central India"
+        region: ${{ fromJson(
+          env.TF_VAR_environment == 'prod'
+            && '[{"name":"US","app_name":"${{ needs.terraform.outputs.us_app_service_name }}","short_name":"us","location":"East US"},{"name":"Europe","app_name":"${{ needs.terraform.outputs.europe_app_service_name }}","short_name":"eu","location":"North Europe"},{"name":"India","app_name":"${{ needs.terraform.outputs.india_app_service_name }}","short_name":"in","location":"Central India"}]'
+            || '[{"name":"US","app_name":"${{ needs.terraform.outputs.us_app_service_name }}","short_name":"us","location":"East US"},{"name":"Europe","app_name":"${{ needs.terraform.outputs.europe_app_service_name }}","short_name":"eu","location":"North Europe"}]'
+        ) }}
     
     steps:
     - name: Azure Login

@@ -105,12 +105,12 @@ resource "azurerm_cdn_frontdoor_route" "main" {
   name                          = "default-route"
   cdn_frontdoor_endpoint_id     = azurerm_cdn_frontdoor_endpoint.main.id
   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.main.id
-  cdn_frontdoor_origin_ids      = [
+  cdn_frontdoor_origin_ids      = compact([
     azurerm_cdn_frontdoor_origin.us.id,
     azurerm_cdn_frontdoor_origin.eu.id,
     # Only include India origin if it exists
     length(azurerm_cdn_frontdoor_origin.india) > 0 ? azurerm_cdn_frontdoor_origin.india[0].id : null
-  ]
+  ])
   
   enabled = true
   

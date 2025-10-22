@@ -90,12 +90,12 @@ output "europe_app_service_url" {
 
 output "india_app_service_name" {
   description = "Name of India App Service"
-  value       = module.app_services["india"].app_service_name
+  value       = try(module.app_services["india"].app_service_name, null)
 }
 
 output "india_app_service_url" {
   description = "URL of India App Service"
-  value       = module.app_services["india"].app_service_url
+  value       = try(module.app_services["india"].app_service_url, null)
 }
 
 # Monitoring

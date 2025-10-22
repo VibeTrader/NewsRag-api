@@ -41,6 +41,7 @@ variable "eu_app_service_hostname" {
 variable "india_app_service_hostname" {
   description = "Hostname of India App Service"
   type        = string
+  default     = ""
 }
 
 variable "health_check_path" {

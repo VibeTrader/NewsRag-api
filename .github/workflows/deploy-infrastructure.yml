@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
     paths:
       - 'terraform/**'
   workflow_dispatch:
@@ -24,11 +25,12 @@ permissions:
 env:
   TF_VERSION: '1.5.0'
   WORKING_DIRECTORY: './terraform'
-  TF_VAR_environment: 'prod'
+  # Set environment based on branch: 'prod' for main, 'dev' for dev
+  TF_VAR_environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
   TF_VAR_app_service_plan_sku: 'B1'
   TF_VAR_app_service_plan_tier: 'Basic'
-  TF_VAR_min_instances: '1'
-  TF_VAR_max_instances: '3'
+  # TF_VAR_min_instances: '1'
+  # TF_VAR_max_instances: '3'
   TF_VAR_health_check_path: '/health'
   TF_VAR_alert_email: 'haripriyaveluchamy@aity.dev'
   TF_VAR_log_retention_days: '30'
@@ -42,7 +44,7 @@ env:
       SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
       ENABLE_ORYX_BUILD = "true"
       PYTHON_VERSION = "3.12"
-      ENVIRONMENT = "production"
+      ENVIRONMENT = ${{ github.ref == 'refs/heads/main' && '"production"' || '"development"' }}
       HEALTH_CHECK_ENABLED = "true"
       API_HOST = "0.0.0.0"
       API_PORT = "8000"
@@ -61,6 +63,7 @@ env:
 jobs:
   terraform:
     name: 'Terraform Multi-Region'
+    # Only run infra jobs in the main repo, never in forks
     if: github.repository == 'VibeTrader/NewsRag-api'
     runs-on: ubuntu-latest
     environment: production
@@ -71,7 +74,6 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     
     outputs:
-      traffic_manager_url: ${{ steps.terraform_outputs.outputs.traffic_manager_url }}
       us_app_service_name: ${{ steps.terraform_outputs.outputs.us_app_service_name }}
       europe_app_service_name: ${{ steps.terraform_outputs.outputs.europe_app_service_name }}
       india_app_service_name: ${{ steps.terraform_outputs.outputs.india_app_service_name }}
@@ -86,13 +88,6 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Set Terraform Environment Variables
-      run: |
-        echo "Setting up Terraform authentication..."
-        echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
-        echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV  
-        echo "ARM_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
-        echo "ARM_USE_AZUREAD=true" >> $GITHUB_ENV
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -149,7 +144,7 @@ jobs:
           -backend-config="resource_group_name=terraform-state-rg" \
           -backend-config="storage_account_name=tfstatevraag" \
           -backend-config="container_name=terraform-state" \
-          -backend-config="key=newsraag-prod.tfstate" \
+          -backend-config="key=newsraag-${{ env.TF_VAR_environment }}.tfstate" \
           -backend-config="access_key=$STORAGE_KEY"
         
         echo "✓ Terraform initialized successfully"
@@ -167,7 +162,8 @@ jobs:
         terraform apply -auto-approve tfplan
       
     - name: Terraform Destroy
-      if: github.event.inputs.action == 'destroy'
+      # Only allow destroy from the main repo, never from forks
+      if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action == 'destroy'
       run: |
         echo "Running terraform destroy..."
         
@@ -187,7 +183,6 @@ jobs:
       id: terraform_outputs
       run: |
         echo "Retrieving Terraform outputs..."
-        echo "traffic_manager_url=$(terraform output -raw traffic_manager_url)" >> $GITHUB_OUTPUT
         echo "us_app_service_name=$(terraform output -raw us_app_service_name)" >> $GITHUB_OUTPUT
         echo "europe_app_service_name=$(terraform output -raw europe_app_service_name)" >> $GITHUB_OUTPUT
         echo "india_app_service_name=$(terraform output -raw india_app_service_name)" >> $GITHUB_OUTPUT
@@ -202,19 +197,8 @@ jobs:
     
     strategy:
       matrix:
-        region:
-          - name: "US"
-            app_name: ${{ needs.terraform.outputs.us_app_service_name }}
-            short_name: "us"
-            location: "East US"
-          - name: "Europe" 
-            app_name: ${{ needs.terraform.outputs.europe_app_service_name }}
-            short_name: "eu"
-            location: "North Europe"
-          - name: "India"
-            app_name: ${{ needs.terraform.outputs.india_app_service_name }}
-            short_name: "in"
-            location: "Central India"
+        # Only include India region in prod, not dev
+        region: ${{ fromJson(github.ref == 'refs/heads/main' && format('[{{"name":"US","app_name":"{0}","short_name":"us","location":"East US"}},{{"name":"Europe","app_name":"{1}","short_name":"eu","location":"North Europe"}},{{"name":"India","app_name":"{2}","short_name":"in","location":"Central India"}}]', needs.terraform.outputs.us_app_service_name, needs.terraform.outputs.europe_app_service_name, needs.terraform.outputs.india_app_service_name) || format('[{{"name":"US","app_name":"{0}","short_name":"us","location":"East US"}},{{"name":"Europe","app_name":"{1}","short_name":"eu","location":"North Europe"}}]', needs.terraform.outputs.us_app_service_name, needs.terraform.outputs.europe_app_service_name)) }}
     
     steps:
     - name: Azure Login
@@ -272,7 +256,6 @@ jobs:
       run: |
         echo "🎉 Infrastructure deployment completed successfully!"
         echo "📊 Infrastructure Summary:"
-        echo "  • Traffic Manager URL: ${{ needs.terraform.outputs.traffic_manager_url }}"
         echo "  • US App Service: ${{ needs.terraform.outputs.us_app_service_name }}"
         echo "  • Europe App Service: ${{ needs.terraform.outputs.europe_app_service_name }}"
         echo "  • India App Service: ${{ needs.terraform.outputs.india_app_service_name }}"

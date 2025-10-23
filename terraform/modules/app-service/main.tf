@@ -17,25 +17,16 @@ locals {
   resource_prefix = "${var.project_name}-${var.region.short_name}"
 }
 
-# App Service Plan (Region-specific - REQUIRED)
-# Note: App Service Plans cannot be shared across regions
-resource "azurerm_service_plan" "main" {
-  name                = "plan-${local.resource_prefix}-${var.environment}"
-  location            = var.region.location  # Each plan in its own region
-  resource_group_name = var.existing_resource_group_name  # Use existing RG
-  
-  os_type  = "Linux"
-  sku_name = var.app_service_plan_sku
-  
-  tags = var.common_tags
-}
+# App Service Plan - Shared across regions (Created externally)
+# Note: Plans are now environment-specific, not region-specific
+# The plan_id is passed from main.tf
 
-# App Service (Uses the regional App Service Plan)
+# App Service (Uses the shared App Service Plan from main.tf)
 resource "azurerm_linux_web_app" "main" {
   name                = "${local.resource_prefix}-${var.environment}"
   location            = var.region.location
   resource_group_name = var.existing_resource_group_name  # Use existing RG
-  service_plan_id     = azurerm_service_plan.main.id
+  service_plan_id     = var.app_service_plan_id  # Use shared plan
   
   site_config {
     # Python 3.12 application stacks

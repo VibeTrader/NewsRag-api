@@ -55,6 +55,23 @@ resource "azurerm_application_insights" "shared" {
   tags = local.common_tags
 }
 
+# Shared App Service Plan for the environment (hosts all regional apps)
+resource "azurerm_service_plan" "shared" {
+  name                = "plan-${local.project_name}-${local.environment}"
+  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = data.azurerm_resource_group.existing.name
+  
+  os_type  = "Linux"
+  sku_name = var.app_service_plan_sku
+  
+  tags = merge(
+    local.common_tags,
+    {
+      Purpose = "Shared plan for all ${local.environment} regions"
+    }
+  )
+}
+
 # Deploy App Services for all regions using for_each
 module "app_services" {
   source = "./modules/app-service"
@@ -69,6 +86,9 @@ module "app_services" {
   # Use existing resource group
   existing_resource_group_name     = data.azurerm_resource_group.existing.name
   existing_resource_group_location = data.azurerm_resource_group.existing.location
+  
+  # Use shared App Service Plan (all apps in this environment share one plan)
+  app_service_plan_id = azurerm_service_plan.shared.id
   
   # App Service configuration - Basic tier
   app_service_plan_sku  = var.app_service_plan_sku
@@ -133,10 +153,11 @@ module "monitoring" {
   }
   
   # Build app_service_plans map for Standard+ tier monitoring
+  # Now pointing to the single shared plan per environment
   app_service_plans = {
-    for region_key, region_config in local.regions : region_key => {
-      id   = module.app_services[region_key].app_service_plan_id
-      name = module.app_services[region_key].app_service_plan_name
+    shared = {
+      id   = azurerm_service_plan.shared.id
+      name = azurerm_service_plan.shared.name
     }
   }
   

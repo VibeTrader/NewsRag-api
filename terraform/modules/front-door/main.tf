@@ -23,7 +23,7 @@ resource "azurerm_cdn_frontdoor_profile" "main" {
 
 # Front Door Endpoint (this is your global URL)
 resource "azurerm_cdn_frontdoor_endpoint" "main" {
-  name                     = "${var.project_name}-global"
+  name                     = "${var.project_name}-${var.environment}-global"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.main.id
   
   tags = var.common_tags

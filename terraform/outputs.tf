@@ -37,6 +37,17 @@ output "shared_application_insights_connection_string" {
   sensitive   = true
 }
 
+# Shared App Service Plan
+output "shared_app_service_plan_name" {
+  description = "Name of the shared App Service Plan for this environment"
+  value       = azurerm_service_plan.shared.name
+}
+
+output "shared_app_service_plan_id" {
+  description = "ID of the shared App Service Plan"
+  value       = azurerm_service_plan.shared.id
+}
+
 # Azure Front Door (CDN)
 output "frontdoor_url" {
   description = "HTTPS URL of the Front Door endpoint - Your main global URL"
@@ -58,11 +69,11 @@ output "app_services" {
   description = "Details of all deployed app services by region"
   value = {
     for region_key, region_config in local.regions : region_key => {
-      app_service_plan_name = module.app_services[region_key].app_service_plan_name
       app_service_name      = module.app_services[region_key].app_service_name
       app_service_url       = module.app_services[region_key].app_service_url
       location              = region_config.location
       short_name            = region_config.short_name
+      shared_plan           = azurerm_service_plan.shared.name
     }
   }
 }
@@ -117,9 +128,9 @@ output "resources_created" {
     # Dynamic region resources
     regions = {
       for region_key, region_config in local.regions : region_key => {
-        app_service_plan = module.app_services[region_key].app_service_plan_name
         web_app          = module.app_services[region_key].app_service_name
         location         = region_config.location
+        shared_plan      = azurerm_service_plan.shared.name
       }
     }
   }
@@ -137,10 +148,10 @@ output "deployment_summary" {
     # Dynamic regions deployed
     regions_deployed = {
       for region_key, region_config in local.regions : region_key => {
-        app_service_plan = module.app_services[region_key].app_service_plan_name
         web_app         = module.app_services[region_key].app_service_name
         url             = module.app_services[region_key].app_service_url
         location        = region_config.location
+        shared_plan     = azurerm_service_plan.shared.name
       }
     }
     
@@ -173,12 +184,18 @@ output "quick_urls" {
 output "autoscaling_summary" {
   description = "Auto-scaling configuration for each region"
   value = {
-    for region_key, region_config in local.regions : "${region_key}_region" => {
-      app_service_plan = module.app_services[region_key].app_service_plan_name
-      location        = region_config.location
-      # min_instances   = var.min_instances
-      # max_instances   = var.max_instances
-      scaling_triggers = "CPU > 70% (scale out), CPU < 30% (scale in), Memory > 80% (scale out), Memory < 40% (scale in)"
+    shared_plan = {
+      name            = azurerm_service_plan.shared.name
+      sku             = var.app_service_plan_sku
+      hosts_regions   = [for region_key in keys(local.regions) : region_key]
+      scaling_note    = "All regions share this plan. Scaling affects all apps."
+    }
+    regions = {
+      for region_key, region_config in local.regions : "${region_key}_region" => {
+        web_app         = module.app_services[region_key].app_service_name
+        location        = region_config.location
+        scaling_triggers = "CPU > 70% (scale out), CPU < 30% (scale in), Memory > 80% (scale out), Memory < 40% (scale in)"
+      }
     }
   }
 }

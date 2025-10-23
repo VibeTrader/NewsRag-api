@@ -128,7 +128,7 @@ jobs:
       # Only allow destroy from the main repo, never from forks
       if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action == 'destroy'
       run: |
-        echo "Running terraform destroy...
+        echo "Running terraform destroy..."
         
         # Run destroy
         terraform destroy -auto-approve

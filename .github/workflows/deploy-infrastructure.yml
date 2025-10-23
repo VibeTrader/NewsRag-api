@@ -119,7 +119,7 @@ jobs:
         terraform plan -out=tfplan
 
     - name: Terraform Apply
-      if: github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      if: github.event.inputs.action == 'apply' || github.event_name == 'push'
       run: |
         echo "Applying Terraform configuration..."
         terraform apply -auto-approve tfplan

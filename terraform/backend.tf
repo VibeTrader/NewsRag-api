@@ -1,9 +1,9 @@
 # backend.tf
 terraform {
   # Temporarily disable backend for local testing
-   # backend "azurerm" {
+    backend "azurerm" {
      # Empty backend configuration - will be filled via CLI parameters
-  # }
+    }
   
   required_providers {
     azurerm = {

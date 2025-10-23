@@ -1,5 +1,5 @@
 # -----------------------------------------------------
-# Main Terraform configuration for multiregion NewsRAG API
+# Main Terraform configuration for multiregion NewsRAG APIs
 # -----------------------------------------------------
 
 # Local values for consistent naming

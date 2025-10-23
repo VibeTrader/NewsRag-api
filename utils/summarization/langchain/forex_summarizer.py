@@ -10,17 +10,17 @@ from loguru import logger
 
 # Import LangChain components with fallbacks
 try:
-    # Try modern imports first
+    # Try modern imports first (LangChain 1.0+)
     from langchain_openai import AzureChatOpenAI
-    from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-    from langchain.chains import LLMChain
+    from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+    from langchain_classic.chains import LLMChain
     logger.info("Using modern LangChain imports")
-except ImportError:
+except ImportError as e:
     try:
-        # Fall back to legacy imports
+        # Fall back to legacy imports (LangChain 0.x)
         from langchain.chat_models import AzureChatOpenAI
-        from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-        from langchain.chains import LLMChain
+        from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+        from langchain_classic.chains import LLMChain
         logger.info("Using legacy LangChain imports")
     except ImportError:
         logger.error("Failed to import LangChain components - functionality will be limited")
@@ -28,11 +28,27 @@ except ImportError:
         class AzureChatOpenAI:
             def __init__(self, *args, **kwargs):
                 pass
+        
         class LLMChain:
             def __init__(self, *args, **kwargs):
                 pass
             async def ainvoke(self, *args, **kwargs):
                 return {"text": "LangChain import error: Unable to generate summary"}
+        
+        class SystemMessagePromptTemplate:
+            @staticmethod
+            def from_template(template):
+                return template
+        
+        class HumanMessagePromptTemplate:
+            @staticmethod
+            def from_template(template):
+                return template
+        
+        class ChatPromptTemplate:
+            @staticmethod
+            def from_messages(messages):
+                return messages
 
 
 # Import monitoring

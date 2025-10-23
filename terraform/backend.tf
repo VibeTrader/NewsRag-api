@@ -1,20 +1,24 @@
 # backend.tf
 terraform {
   # Temporarily disable backend for local testing
-   # backend "azurerm" {
+    backend "azurerm" {
      # Empty backend configuration - will be filled via CLI parameters
-  # }
+    }
   
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.75.0"
+      version = "~> 4.0"
     }
   }
 }
 
 provider "azurerm" {
-  # Skip automatic resource provider registration to avoid Microsoft.TimeSeriesInsights error
+  # Subscription ID is provided via ARM_SUBSCRIPTION_ID environment variable in pipeline
+  # For local testing, either set ARM_SUBSCRIPTION_ID env var or uncomment below:
+  # subscription_id = "your-subscription-id-here"
+  
+  # Skip automatic resource provider registration (deprecated in v5.0)
   skip_provider_registration = true
   
   features {

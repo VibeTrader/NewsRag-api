@@ -12,9 +12,12 @@ openai>=1.0.0
 azure-core>=1.29.0
 
 # LangChain for advanced summarization
-langchain>=0.0.312
-langchain-openai>=0.0.1
-langchain-community>=0.0.10
+langchain>=1.0.2
+langchain-classic>=1.0.0
+langchain-openai>=1.0.1
+langchain-community>=0.4.0
+langchain-core>=1.0.0
+langchain-text-splitters>=1.0.0
 
 # LLM Monitoring and Observability
 langfuse>=3.3.4
@@ -37,10 +40,10 @@ psutil>=5.9.6
 tiktoken>=0.6.0
 
 # OpenTelemetry for monitoring
-opentelemetry-api>=1.33.1,<2.0.0
-opentelemetry-sdk>=1.33.1,<2.0.0
-opentelemetry-exporter-otlp>=1.33.1,<2.0.0
-opentelemetry-instrumentation>=0.42b0
+opentelemetry-api>=1.38.0
+opentelemetry-sdk>=1.38.0
+opentelemetry-exporter-otlp>=1.38.0
+opentelemetry-instrumentation>=0.59b0
 
 # Ensure specific versions for Langfuse integration
 langfuse==3.3.4

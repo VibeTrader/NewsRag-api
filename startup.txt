@@ -1,17 +1,10 @@
-# Force reinstall the correct versions of OpenTelemetry that work with Langfuse
-echo "Reinstalling OpenTelemetry packages with compatible versions..."
-/home/site/wwwroot/antenv/bin/pip install --force-reinstall --no-cache-dir opentelemetry-api==1.21.0
-/home/site/wwwroot/antenv/bin/pip install --force-reinstall --no-cache-dir opentelemetry-sdk==1.21.0
-/home/site/wwwroot/antenv/bin/pip install --force-reinstall --no-cache-dir opentelemetry-exporter-otlp==1.21.0
-
-# Reinstall Langfuse with a compatible version
-echo "Reinstalling Langfuse..."
-/home/site/wwwroot/antenv/bin/pip install --force-reinstall --no-cache-dir langfuse==3.0.6
-
-# List installed versions for debugging
-echo "Installed package versions:"
+# Verify package versions match requirements.txt (no force reinstall)
+echo "Verifying package versions..."
 /home/site/wwwroot/antenv/bin/pip list | grep opentelemetry
 /home/site/wwwroot/antenv/bin/pip list | grep langfuse
+/home/site/wwwroot/antenv/bin/pip list | grep langchain
+
+echo "Package verification complete"
 
 # Start the application
 echo "Starting the application..."

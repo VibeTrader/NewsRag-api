@@ -7,7 +7,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~>3.0"
+      version = "~>4.0"
     }
   }
 }
@@ -40,14 +40,15 @@ resource "azurerm_linux_web_app" "main" {
   site_config {
     # Python 3.12 application stacks
     application_stack {
-      python_version = "3.11"
+      python_version = "3.12"
     }
     
     # FastAPI startup commands
     app_command_line = "python -m uvicorn api:app --host 0.0.0.0 --port 8000"
     
     # Health check configuration
-    health_check_path = "/health"
+    health_check_path                   = "/health"
+    health_check_eviction_time_in_min   = 10  # Remove from load balancer after 10 min of failed checks
     
     # Always on to keep the app warm
     always_on = true
@@ -89,6 +90,3 @@ resource "azurerm_linux_web_app" "main" {
     ]
   }
 }
-
-# Auto-scaling configuration (Per App Service Plan)
-# Each region scales independently based on its own metrics

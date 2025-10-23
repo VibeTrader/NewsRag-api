@@ -1,5 +1,5 @@
 # ============================================
-# Monitoring Module Outputs - Essential Alerts Only
+# Monitoring Module Outputs - Per-Region Alerts
 # ============================================
 
 output "action_group_id" {
@@ -12,7 +12,7 @@ output "action_group_name" {
   value       = azurerm_monitor_action_group.main.name
 }
 
-# App Service Alert IDs (Essential only)
+# App Service Alert IDs (Per-region)
 output "response_time_alert_ids" {
   description = "IDs of response time alerts by region"
   value       = { for k, v in azurerm_monitor_metric_alert.high_response_time : k => v.id }

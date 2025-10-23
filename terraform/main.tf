@@ -1,5 +1,5 @@
 # -----------------------------------------------------
-# Main Terraform configuration for multiregion NewsRAG API
+# Main Terraform configuration for multiregion NewsRAG AP
 # -----------------------------------------------------
 
 # Local values for consistent naming
@@ -112,9 +112,10 @@ module "front_door" {
   common_tags = local.common_tags
 }
 
-# Enhanced monitoring for multi-region setup
+# Enhanced monitoring for multi-region setup (PROD ONLY)
 module "monitoring" {
   source = "./modules/monitoring"
+  count  = var.environment == "prod" ? 1 : 0  # Only create monitoring in prod
   
   project_name         = local.project_name
   environment          = local.environment

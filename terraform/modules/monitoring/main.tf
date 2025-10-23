@@ -1,6 +1,6 @@
 # ============================================
-# Monitoring Module - Essential Alerts Only (Basic Tier Compatible)
-# Simplified to avoid metric compatibility issues
+# Monitoring Module - PROD ONLY
+# Per-region alerts (Azure limitation for App Services)
 # ============================================
 
 terraform {
@@ -38,7 +38,8 @@ resource "azurerm_monitor_action_group" "main" {
 }
 
 # ============================================
-# Essential App Service Alerts (Guaranteed to work on all tiers)
+# App Service Alerts (Per-Region)
+# Note: Azure does NOT support multi-resource alerts for App Services
 # ============================================
 
 # HTTP Response Time Alerts
@@ -126,7 +127,7 @@ resource "azurerm_monitor_metric_alert" "request_spike" {
 }
 
 # ============================================
-# Application Insights Alerts (Essential Only)
+# Application Insights Alerts
 # ============================================
 
 # Availability Alert
@@ -157,7 +158,6 @@ resource "azurerm_monitor_metric_alert" "availability" {
 
 # ============================================
 # App Service Plan Alerts (Standard+ Tiers Only)
-# These will be ignored on Basic tier
 # ============================================
 
 # CPU Percentage Alert for App Service Plan (Standard+)

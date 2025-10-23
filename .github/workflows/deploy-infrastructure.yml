@@ -29,8 +29,6 @@ env:
   TF_VAR_environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
   TF_VAR_app_service_plan_sku: 'B1'
   TF_VAR_app_service_plan_tier: 'Basic'
-  # TF_VAR_min_instances: '1'
-  # TF_VAR_max_instances: '3'
   TF_VAR_health_check_path: '/health'
   TF_VAR_alert_email: 'haripriyaveluchamy@aity.dev'
   TF_VAR_log_retention_days: '30'
@@ -94,41 +92,6 @@ jobs:
       with:
         terraform_version: ${{ env.TF_VERSION }}
 
-    - name: Ensure Backend Storage Exists
-      run: |
-        echo "Ensuring backend storage is ready..."
-        
-        # Create resource group if it doesn't exist
-        az group create --name terraform-state-rg --location eastus --output none || true
-        
-        # Create storage account if it doesn't exist
-        if ! az storage account show --name tfstatevraag --resource-group terraform-state-rg >/dev/null 2>&1; then
-          echo "Creating storage account..."
-          az storage account create \
-            --name tfstatevraag \
-            --resource-group terraform-state-rg \
-            --location eastus \
-            --sku Standard_LRS \
-            --min-tls-version TLS1_2 \
-            --allow-blob-public-access false
-          echo "✓ Storage account created"
-        else
-          echo "✓ Storage account exists"
-        fi
-        
-        # Create container if it doesn't exist
-        if ! az storage container show --name terraform-state --account-name tfstatevraag --auth-mode login >/dev/null 2>&1; then
-          echo "Creating container..."
-          az storage container create \
-            --name terraform-state \
-            --account-name tfstatevraag \
-            --auth-mode login \
-            --public-access off
-          echo "✓ Container created"
-        else
-          echo "✓ Container exists"
-        fi
-
     - name: Terraform Init
       run: |
         echo "Getting storage account key for backend..."
@@ -156,7 +119,7 @@ jobs:
         terraform plan -out=tfplan
 
     - name: Terraform Apply
-      if: github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.inputs.action != 'destroy')
+      if: github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
       run: |
         echo "Applying Terraform configuration..."
         terraform apply -auto-approve tfplan
@@ -165,15 +128,7 @@ jobs:
       # Only allow destroy from the main repo, never from forks
       if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action == 'destroy'
       run: |
-        echo "Running terraform destroy..."
-        
-        # Clean up autoscale settings first
-        RESOURCE_GROUP="${{ env.TF_VAR_existing_resource_group_name }}"
-        for REGION in "us" "eu" "in"; do
-          AUTOSCALE_NAME="autoscale-newsraag-${REGION}-prod"
-          echo "Force removing $AUTOSCALE_NAME..."
-          az monitor autoscale setting delete --name $AUTOSCALE_NAME --resource-group $RESOURCE_GROUP --yes 2>/dev/null || echo "Already removed"
-        done
+        echo "Running terraform destroy...
         
         # Run destroy
         terraform destroy -auto-approve
@@ -191,7 +146,7 @@ jobs:
   configure_app_settings:
     name: 'Configure App Settings with Secrets'
     needs: terraform
-    if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
+    if: github.repository == 'VibeTrader/NewsRag-api' && (github.event.inputs.action != 'destroy' || github.event_name == 'push')
     runs-on: ubuntu-latest
     environment: production
     
@@ -248,7 +203,7 @@ jobs:
   infrastructure_complete:
     name: 'Infrastructure Deployment Complete'
     needs: [terraform, configure_app_settings]
-    if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action != 'destroy' && needs.terraform.outputs.traffic_manager_url != ''
+    if: github.repository == 'VibeTrader/NewsRag-api' && (github.event.inputs.action != 'destroy' || github.event_name == 'push')
     runs-on: ubuntu-latest
     
     steps:

@@ -32,11 +32,6 @@ variable "existing_resource_group_location" {
   type        = string
 }
 
-variable "app_service_plan_id" {
-  description = "ID of the shared App Service Plan (created in main.tf)"
-  type        = string
-}
-
 variable "app_service_plan_sku" {
   description = "SKU for the App Service Plan"
   type        = string

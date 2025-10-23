@@ -13,6 +13,16 @@ output "resource_group_location" {
   value       = var.existing_resource_group_location
 }
 
+output "app_service_plan_name" {
+  description = "Name of the App Service Plan"
+  value       = azurerm_service_plan.main.name
+}
+
+output "app_service_plan_id" {
+  description = "ID of the App Service Plan"
+  value       = azurerm_service_plan.main.id
+}
+
 output "app_service_name" {
   description = "Name of the App Service"
   value       = azurerm_linux_web_app.main.name

@@ -134,7 +134,7 @@ jobs:
         terraform destroy -auto-approve
         
     - name: Get Terraform Outputs
-      if: github.event.inputs.action != 'destroy'
+      if: github.event.inputs.action != 'destroy' || github.event_name == 'push'
       id: terraform_outputs
       run: |
         echo "Retrieving Terraform outputs..."

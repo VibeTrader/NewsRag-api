@@ -1,6 +1,6 @@
 # ============================================
-# Monitoring Module - Essential Alerts Only (Basic Tier Compatible)
-# Simplified to avoid metric compatibility issues
+# Monitoring Module - PROD ONLY
+# Per-region alerts (Azure limitation for App Services)
 # ============================================
 
 terraform {
@@ -12,9 +12,9 @@ terraform {
   }
 }
 
-# Shared Action Group for all environments (use count to create only once)
+# Action Group for alerts (Email + Slack)
 resource "azurerm_monitor_action_group" "main" {
-  name                = "ag-${var.project_name}-global"
+  name                = "ag-${var.project_name}-${var.environment}"
   resource_group_name = var.resource_group_name
   short_name          = "newsrag"
   
@@ -38,15 +38,18 @@ resource "azurerm_monitor_action_group" "main" {
 }
 
 # ============================================
-# Environment-Level App Service Alerts (Monitor ALL apps per environment)
+# App Service Alerts (Per-Region)
+# Note: Azure does NOT support multi-resource alerts for App Services
 # ============================================
 
-# HTTP Response Time Alert - Environment Level
+# HTTP Response Time Alerts
 resource "azurerm_monitor_metric_alert" "high_response_time" {
-  name                = "alert-response-time-${var.environment}"
+  for_each = var.app_services
+  
+  name                = "alert-response-time-${each.key}-${var.environment}"
   resource_group_name = var.resource_group_name
-  scopes              = [for app in var.app_services : app.id]
-  description         = "High HTTP response time alert for all ${var.environment} apps"
+  scopes              = [each.value.id]
+  description         = "High HTTP response time alert for ${each.key} region"
   severity            = 2
   frequency           = "PT1M"
   window_size         = "PT5M"
@@ -67,12 +70,14 @@ resource "azurerm_monitor_metric_alert" "high_response_time" {
   tags = var.common_tags
 }
 
-# HTTP 5xx Error Rate Alert - Environment Level
+# HTTP 5xx Error Rate Alerts
 resource "azurerm_monitor_metric_alert" "high_error_rate" {
-  name                = "alert-error-rate-${var.environment}"
+  for_each = var.app_services
+  
+  name                = "alert-error-rate-${each.key}-${var.environment}"
   resource_group_name = var.resource_group_name
-  scopes              = [for app in var.app_services : app.id]
-  description         = "High 5xx error rate alert for all ${var.environment} apps"
+  scopes              = [each.value.id]
+  description         = "High 5xx error rate alert for ${each.key} region"
   severity            = 1 # Critical
   frequency           = "PT1M"
   window_size         = "PT5M"
@@ -93,12 +98,14 @@ resource "azurerm_monitor_metric_alert" "high_error_rate" {
   tags = var.common_tags
 }
 
-# Request Count Spike Alert - Environment Level
+# Request Count Spike Alert
 resource "azurerm_monitor_metric_alert" "request_spike" {
-  name                = "alert-request-spike-${var.environment}"
+  for_each = var.app_services
+  
+  name                = "alert-request-spike-${each.key}-${var.environment}"
   resource_group_name = var.resource_group_name
-  scopes              = [for app in var.app_services : app.id]
-  description         = "Unusual request spike alert for all ${var.environment} apps"
+  scopes              = [each.value.id]
+  description         = "Unusual request spike alert for ${each.key} region"
   severity            = 2
   frequency           = "PT1M"
   window_size         = "PT15M"
@@ -120,7 +127,7 @@ resource "azurerm_monitor_metric_alert" "request_spike" {
 }
 
 # ============================================
-# Application Insights Alerts (Essential Only)
+# Application Insights Alerts
 # ============================================
 
 # Availability Alert
@@ -151,17 +158,16 @@ resource "azurerm_monitor_metric_alert" "availability" {
 
 # ============================================
 # App Service Plan Alerts (Standard+ Tiers Only)
-# These will be ignored on Basic tier
 # ============================================
 
-# CPU Percentage Alert for App Service Plan (Standard+) - Environment Level
+# CPU Percentage Alert for App Service Plan (Standard+)
 resource "azurerm_monitor_metric_alert" "high_cpu_plan" {
-  count = var.enable_plan_metrics ? 1 : 0
+  for_each = var.enable_plan_metrics ? var.app_service_plans : {}
   
-  name                = "alert-plan-cpu-${var.environment}"
+  name                = "alert-plan-cpu-${each.key}-${var.environment}"
   resource_group_name = var.resource_group_name
-  scopes              = [for plan in var.app_service_plans : plan.id]
-  description         = "High CPU percentage alert for ${var.environment} app service plan"
+  scopes              = [each.value.id]
+  description         = "High CPU percentage alert for ${each.key} app service plan"
   severity            = 2
   frequency           = "PT5M"
   window_size         = "PT15M"
@@ -182,14 +188,14 @@ resource "azurerm_monitor_metric_alert" "high_cpu_plan" {
   tags = var.common_tags
 }
 
-# Memory Percentage Alert for App Service Plan (Standard+) - Environment Level
+# Memory Percentage Alert for App Service Plan (Standard+)
 resource "azurerm_monitor_metric_alert" "high_memory_plan" {
-  count = var.enable_plan_metrics ? 1 : 0
+  for_each = var.enable_plan_metrics ? var.app_service_plans : {}
   
-  name                = "alert-plan-memory-${var.environment}"
+  name                = "alert-plan-memory-${each.key}-${var.environment}"
   resource_group_name = var.resource_group_name
-  scopes              = [for plan in var.app_service_plans : plan.id]
-  description         = "High memory percentage alert for ${var.environment} app service plan"
+  scopes              = [each.value.id]
+  description         = "High memory percentage alert for ${each.key} app service plan"
   severity            = 2
   frequency           = "PT5M"
   window_size         = "PT15M"

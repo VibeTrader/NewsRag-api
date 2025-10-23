@@ -98,10 +98,10 @@ output "india_app_service_url" {
   value       = try(module.app_services["india"].app_service_url, null)
 }
 
-# Monitoring
+# Monitoring (PROD ONLY)
 output "action_group_name" {
-  description = "Name of the action group for alerts"
-  value       = module.monitoring.action_group_name
+  description = "Name of the action group for alerts (prod only)"
+  value       = var.environment == "prod" ? module.monitoring[0].action_group_name : null
 }
 
 # Resource Summary (Dynamic)

@@ -195,7 +195,7 @@ class LangChainForexSummarizer:
         
         # Batch processing: limit the number of articles to improve performance
         # Use max_articles to control batch size
-        max_articles = int(os.getenv("MAX_SUMMARY_ARTICLES", "15"))
+        max_articles = int(os.getenv("MAX_SUMMARY_ARTICLES", "100"))
         if len(sorted_articles) > max_articles:
             logger.info(f"Limiting articles for summary from {len(sorted_articles)} to {max_articles}")
             selected_articles = sorted_articles[:max_articles]

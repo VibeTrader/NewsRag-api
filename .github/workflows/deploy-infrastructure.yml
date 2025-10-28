@@ -53,7 +53,7 @@ env:
       HEALTH_CHECK_ENABLED = "true"
       API_HOST = "0.0.0.0"
       API_PORT = "8000"
-      AZURE_OPENAI_API_VERSION = "2024-02-01"
+      AZURE_OPENAI_API_VERSION = "2025-01-01-preview"
       AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
       EMBEDDING_DIMENSION = "3072"
       QDRANT_COLLECTION_NAME = "news_articles"

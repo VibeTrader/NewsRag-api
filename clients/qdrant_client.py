@@ -229,6 +229,40 @@ class QdrantClientWrapper:
             # Fallback to first 500 characters
             return text_content[:500] + "..." if len(text_content) > 500 else text_content
 
+    def _perform_search(self, query_vector: List[float], limit: int, score_threshold: float):
+        """Perform vector search with compatibility for different qdrant-client versions.
+        
+        qdrant-client v1.15+ replaced 'search' with 'query_points'.
+        This method handles both versions.
+        """
+        try:
+            # Try new API first (qdrant-client >= 1.15)
+            if hasattr(self.client, 'query_points'):
+                results = self.client.query_points(
+                    collection_name=self.collection_name,
+                    query=query_vector,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    with_payload=True
+                )
+                # query_points returns QueryResponse with .points attribute
+                return results.points if hasattr(results, 'points') else results
+            else:
+                # Fallback to old API (qdrant-client < 1.15)
+                return self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_vector,
+                    limit=limit,
+                    score_threshold=score_threshold
+                )
+        except Exception as e:
+            logger.error(f"Error in _perform_search: {e}")
+            raise QdrantError(
+                f"Search failed: {str(e)}",
+                original_error=e,
+                details={"collection": self.collection_name}
+            )
+
     def _ensure_collection_exists_sync(self):
         """Ensures the collection exists with proper configuration (synchronous version)."""
         try:
@@ -329,14 +363,14 @@ class QdrantClientWrapper:
             search_start_time = time.time()
             
             # Track Qdrant search operation
+            # Note: qdrant-client v1.15+ uses query_points instead of search
             if self.dependency_tracker:
                 search_results = await self.dependency_tracker.track_async(
                     asyncio.to_thread(
-                        self.client.search,
-                        collection_name=self.collection_name,
-                        query_vector=query_embedding,
-                        limit=limit,
-                        score_threshold=score_threshold
+                        self._perform_search,
+                        query_embedding,
+                        limit,
+                        score_threshold
                     ),
                     name="vector_search",
                     type_name="Qdrant",
@@ -348,12 +382,7 @@ class QdrantClientWrapper:
                     }
                 )
             else:
-                search_results = self.client.search(
-                    collection_name=self.collection_name,
-                    query_vector=query_embedding,
-                    limit=limit,
-                    score_threshold=score_threshold
-                )
+                search_results = self._perform_search(query_embedding, limit, score_threshold)
             
             # Format results to match crawler's data structure
             results = []

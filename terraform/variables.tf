@@ -145,3 +145,27 @@ variable "frontdoor_sku" {
     error_message = "SKU must be either Standard_AzureFrontDoor or Premium_AzureFrontDoor"
   }
 }
+
+
+# ============================================
+# Existing Action Group Configuration
+# Use this to connect to your VibeTrader alerts
+# ============================================
+
+variable "use_existing_action_group" {
+  description = "Whether to use an existing action group instead of creating a new one"
+  type        = bool
+  default     = true  # Set to true to use your existing action group
+}
+
+variable "existing_action_group_name" {
+  description = "Name of the existing action group"
+  type        = string
+  default     = "VibetraderCoreallAlerts"  # Your existing action group
+}
+
+variable "existing_action_group_rg" {
+  description = "Resource group of the existing action group"
+  type        = string
+  default     = "Vibetrader_CoreProduction"  # Your existing RG
+}

@@ -120,9 +120,18 @@ module "monitoring" {
   project_name         = local.project_name
   environment          = local.environment
   resource_group_name  = data.azurerm_resource_group.existing.name
+  location             = data.azurerm_resource_group.existing.location
   
   # Use shared Application Insights
   application_insights_id = azurerm_application_insights.shared.id
+  
+  # API hostname for availability tests
+  api_hostname = module.front_door.frontdoor_endpoint_hostname
+  
+  # Use existing action group from Vibetrader_CoreProduction
+  use_existing_action_group  = var.use_existing_action_group
+  existing_action_group_name = var.existing_action_group_name
+  existing_action_group_rg   = var.existing_action_group_rg
   
   # Build app_services map dynamically from for_each results
   app_services = {
@@ -144,7 +153,7 @@ module "monitoring" {
   # Enable plan metrics when using Standard+ tiers (set via variable)
   enable_plan_metrics = var.enable_plan_metrics
   
-  # Alert configuration
+  # Alert configuration (only used if not using existing action group)
   alert_email       = var.alert_email
   slack_webhook_url = var.slack_webhook_url
   

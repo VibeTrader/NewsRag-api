@@ -13,6 +13,12 @@ variable "environment" {
   type        = string
 }
 
+variable "location" {
+  description = "Azure region for log query alerts"
+  type        = string
+  default     = "eastus"
+}
+
 variable "resource_group_name" {
   description = "Name of the resource group"
   type        = string
@@ -94,4 +100,32 @@ variable "error_4xx_threshold" {
   description = "4xx error threshold per 15 minutes"
   type        = number
   default     = 50
+}
+
+variable "api_hostname" {
+  description = "API hostname for availability tests (e.g., myapi.azurewebsites.net)"
+  type        = string
+  default     = ""
+}
+
+# ============================================
+# Existing Action Group Configuration
+# ============================================
+
+variable "use_existing_action_group" {
+  description = "Whether to use an existing action group instead of creating a new one"
+  type        = bool
+  default     = false
+}
+
+variable "existing_action_group_name" {
+  description = "Name of the existing action group (required if use_existing_action_group = true)"
+  type        = string
+  default     = ""
+}
+
+variable "existing_action_group_rg" {
+  description = "Resource group of the existing action group (required if use_existing_action_group = true)"
+  type        = string
+  default     = ""
 }

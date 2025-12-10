@@ -26,6 +26,27 @@ from utils.monitoring.langfuse import StatefulTraceClient
 from utils.monitoring import LangChainMonitoring
 from utils.summarization.news_summarizer import NewsSummarizer
 
+# Import custom exceptions and validators
+try:
+    from utils.exceptions import (
+        NewsRagException, EmbeddingError, QdrantError, 
+        SearchError, ConfigurationError, ErrorCategory
+    )
+    from utils.env_validator import EnvironmentValidator, env_validator
+    HAS_CUSTOM_ERROR_HANDLING = True
+except ImportError as e:
+    logger.warning(f"Custom error handling modules not available: {e}")
+    HAS_CUSTOM_ERROR_HANDLING = False
+    # Create fallback classes
+    class EmbeddingError(Exception): pass
+    class QdrantError(Exception): pass
+    class ErrorCategory:
+        AUTHENTICATION = "authentication"
+        CONFIGURATION = "configuration"
+        SERVICE_UNAVAILABLE = "service_unavailable"
+        RATE_LIMIT = "rate_limit"
+    env_validator = None
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -53,6 +74,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ============= STARTUP VALIDATION =============
+@app.on_event("startup")
+async def startup_validation():
+    """Validate environment and services on startup."""
+    logger.info("Running startup validation...")
+    
+    if not HAS_CUSTOM_ERROR_HANDLING or env_validator is None:
+        logger.warning("Custom error handling not available, skipping startup validation")
+        return
+    
+    try:
+        validation_result = await env_validator.run_full_validation(force=True)
+        
+        if not validation_result["overall_healthy"]:
+            critical_errors = validation_result.get("critical_errors", [])
+            
+            for error in critical_errors:
+                logger.error(f"CRITICAL STARTUP ERROR: {error['service']} - {error['error']}")
+                
+                # Track critical errors to App Insights
+                if monitor and monitor.enabled:
+                    monitor.track_event("startup_critical_error", {
+                        "service": error["service"],
+                        "error": str(error["error"])[:500]
+                    })
+            
+            logger.warning("⚠️  Application started with configuration issues - some features may not work!")
+            logger.warning("⚠️  Check /health/detailed endpoint for more information")
+        else:
+            logger.info("✅ Startup validation passed - all services healthy")
+            
+    except Exception as e:
+        logger.error(f"Startup validation failed: {e}")
+
 # Simple health endpoint for Traffic Manager (no dependencies)
 @app.get("/health/simple")
 async def simple_health_check():
@@ -76,6 +131,65 @@ async def health_check():
         "region": os.getenv("DEPLOYMENT_REGION", "unknown"),
         "version": "1.0.0"
     }
+
+# Detailed health check with service validation
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """Detailed health check with service validation - use this for debugging."""
+    if not HAS_CUSTOM_ERROR_HANDLING or env_validator is None:
+        return {
+            "status": "unknown",
+            "message": "Custom error handling not available",
+            "timestamp": time.time()
+        }
+    
+    try:
+        validation_result = await env_validator.run_full_validation()
+        
+        return {
+            "status": "healthy" if validation_result["overall_healthy"] else "degraded",
+            "timestamp": validation_result["timestamp"],
+            "services": validation_result["services"],
+            "critical_errors": validation_result.get("critical_errors", []),
+            "environment": os.getenv("ENVIRONMENT", "unknown"),
+            "region": os.getenv("DEPLOYMENT_REGION", "unknown")
+        }
+    except Exception as e:
+        logger.error(f"Detailed health check error: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+# Environment validation endpoint
+@app.get("/env/validate")
+async def validate_environment():
+    """Validate environment variables and service connectivity."""
+    if not HAS_CUSTOM_ERROR_HANDLING or env_validator is None:
+        return {
+            "error": "Environment validator not available",
+            "overall_healthy": False
+        }
+    
+    try:
+        result = await env_validator.run_full_validation(force=True)
+        
+        # Track validation to App Insights
+        if monitor and monitor.enabled:
+            monitor.track_event("env_validation", {
+                "overall_healthy": str(result["overall_healthy"]),
+                "critical_errors_count": str(len(result.get("critical_errors", [])))
+            })
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Environment validation error: {e}")
+        return {
+            "error": str(e),
+            "overall_healthy": False
+        }
 
 # Root endpoint
 @app.get("/")
@@ -310,18 +424,78 @@ async def search_documents(
                 "thresholds_tried": str(thresholds_to_try)
             })
             
-            raise HTTPException(status_code=404, detail="No results found with any threshold")
+            raise HTTPException(status_code=404, detail="No results found matching your query. Try different search terms.")
             
-    except Exception as e:
-        logger.error(f"Error searching documents: {e}")
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except EmbeddingError as e:
+        # Handle embedding errors (likely API key / config issues)
+        logger.error(f"Embedding error in search: {e}")
         
-        # Track the exception
+        category = e.category.value if hasattr(e, 'category') and hasattr(e.category, 'value') else "unknown"
+        
         monitor.track_exception({
             "query": request.query,
-            "error": str(e)
+            "error": str(e),
+            "category": category,
+            "service": "azure_openai",
+            "phase": "search_embedding"
         })
         
-        raise HTTPException(status_code=500, detail=str(e))
+        # Track critical event for alerting
+        monitor.track_event("critical_search_error", {
+            "category": category,
+            "service": "azure_openai",
+            "error": str(e)[:200]
+        })
+        
+        # Return appropriate error based on category
+        if category == "authentication":
+            raise HTTPException(
+                status_code=503,
+                detail="Service configuration error: Unable to process search. The API key may be invalid or expired."
+            )
+        elif category == "configuration":
+            raise HTTPException(
+                status_code=503,
+                detail="Service configuration error: Azure OpenAI deployment not properly configured."
+            )
+        elif category == "rate_limit":
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Please try again in a few moments."
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Search error: {str(e)}"
+            )
+    except QdrantError as e:
+        # Handle Qdrant errors
+        logger.error(f"Qdrant error in search: {e}")
+        
+        monitor.track_exception({
+            "query": request.query,
+            "error": str(e),
+            "service": "qdrant",
+            "phase": "search_query"
+        })
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error searching documents: {e}")
+        
+        monitor.track_exception({
+            "query": request.query,
+            "error": str(e),
+            "type": str(type(e).__name__)
+        })
+        
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 # Get collection stats endpoint
 @app.get("/documents/stats")
@@ -414,6 +588,51 @@ async def summarize_news(
                 "query": request.query
             })
             
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except EmbeddingError as e:
+            # Handle embedding errors (API key / config issues)
+            logger.error(f"Embedding error during summarize search: {e}")
+            
+            category = e.category.value if hasattr(e, 'category') and hasattr(e.category, 'value') else "unknown"
+            
+            monitor.track_exception({
+                "query": request.query,
+                "error": str(e),
+                "category": category,
+                "service": "azure_openai",
+                "phase": "summarize_search"
+            })
+            
+            # Track critical event for alerting
+            monitor.track_event("critical_summarize_error", {
+                "category": category,
+                "service": "azure_openai",
+                "error": str(e)[:200]
+            })
+            
+            if category == "authentication":
+                raise HTTPException(
+                    status_code=503,
+                    detail="Service configuration error: Unable to process request. The API key may be invalid or expired."
+                )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error processing request: {str(e)}"
+            )
+        except QdrantError as e:
+            logger.error(f"Qdrant error during summarize: {e}")
+            monitor.track_exception({
+                "query": request.query,
+                "error": str(e),
+                "service": "qdrant",
+                "phase": "summarize_search"
+            })
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database error: {str(e)}"
+            )
         except Exception as e:
             logger.error(f"Error during search: {e}")
             

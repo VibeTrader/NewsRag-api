@@ -585,27 +585,6 @@ resource "azurerm_monitor_metric_alert" "availability_test_failed" {
 }
 
 
-# ============================================
-# Smart Detection Alerts (Azure Built-in AI)
-# NOTE: SKIPPED - Azure already has FailureAnomaliesDetector configured
-# automatically for Application Insights. Creating another one causes:
-# "ScopeInUse: A FailureAnomaliesDetector alert rule already exists"
-# ============================================
-
-# resource "azurerm_monitor_smart_detector_alert_rule" "failure_anomalies" {
-#   name                = "alert-failure-anomalies-${var.project_name}-${var.environment}"
-#   resource_group_name = var.resource_group_name
-#   severity            = "Sev1"
-#   scope_resource_ids  = [var.application_insights_id]
-#   frequency           = "PT1M"
-#   detector_type       = "FailureAnomaliesDetector"
-#
-#   action_group {
-#     ids = [local.action_group_id]
-#   }
-#
-#   tags = var.common_tags
-# }
 
 # ============================================
 # Response Time Degradation Alert

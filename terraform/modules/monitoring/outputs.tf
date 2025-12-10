@@ -3,13 +3,13 @@
 # ============================================
 
 output "action_group_id" {
-  description = "ID of the action group"
-  value       = azurerm_monitor_action_group.main.id
+  description = "ID of the action group (existing or newly created)"
+  value       = local.action_group_id
 }
 
 output "action_group_name" {
   description = "Name of the action group"
-  value       = azurerm_monitor_action_group.main.name
+  value       = var.use_existing_action_group ? var.existing_action_group_name : (length(azurerm_monitor_action_group.main) > 0 ? azurerm_monitor_action_group.main[0].name : "")
 }
 
 # App Service Alert IDs (Per-region)
@@ -49,9 +49,9 @@ output "availability_alert_id" {
 output "active_alerts_count" {
   description = "Number of active monitoring alerts"
   value = {
-    app_service_alerts = length(var.app_services) * 3  # 3 alerts per region
+    app_service_alerts  = length(var.app_services) * 3 # 3 alerts per region
     availability_alerts = 1
-    plan_alerts = var.enable_plan_metrics ? length(var.app_service_plans) * 2 : 0
-    total = length(var.app_services) * 3 + 1 + (var.enable_plan_metrics ? length(var.app_service_plans) * 2 : 0)
+    plan_alerts         = var.enable_plan_metrics ? length(var.app_service_plans) * 2 : 0
+    total               = length(var.app_services) * 3 + 1 + (var.enable_plan_metrics ? length(var.app_service_plans) * 2 : 0)
   }
 }

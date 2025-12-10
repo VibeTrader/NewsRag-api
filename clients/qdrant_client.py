@@ -9,6 +9,46 @@ from qdrant_client.http import models
 from qdrant_client.http.exceptions import UnexpectedResponse
 import numpy as np
 
+# Import custom exceptions
+try:
+    from utils.exceptions import EmbeddingError, QdrantError, ErrorCategory
+    HAS_CUSTOM_EXCEPTIONS = True
+except ImportError:
+    HAS_CUSTOM_EXCEPTIONS = False
+    # Fallback classes
+    class EmbeddingError(Exception):
+        def __init__(self, message, **kwargs):
+            super().__init__(message)
+            self.category = kwargs.get('category', 'internal')
+            self.service = "azure_openai"
+            self.details = kwargs.get('details', {})
+    
+    class QdrantError(Exception):
+        def __init__(self, message, **kwargs):
+            super().__init__(message)
+            self.category = kwargs.get('category', 'internal')
+            self.service = "qdrant"
+            self.details = kwargs.get('details', {})
+    
+    class ErrorCategory:
+        AUTHENTICATION = "authentication"
+        CONFIGURATION = "configuration"
+        SERVICE_UNAVAILABLE = "service_unavailable"
+        RATE_LIMIT = "rate_limit"
+        INTERNAL = "internal"
+
+# Import monitoring for error tracking
+try:
+    from utils.monitoring import AppInsightsMonitor
+    try:
+        monitor = AppInsightsMonitor.get_instance()
+        if not monitor.enabled:
+            monitor = None
+    except Exception:
+        monitor = None
+except ImportError:
+    monitor = None
+
 # Load environment variables
 load_dotenv()
 
@@ -54,24 +94,45 @@ class QdrantClientWrapper:
 
 
     def _get_embedding_for_search(self, text: str):
-        """Generate embedding for search queries using Azure OpenAI.
-        This is needed because search queries need to be converted to vectors
-        to find similar articles in the database."""
+        """Generate embedding for search queries using Azure OpenAI with proper error handling."""
         try:
-            # Import here to avoid dependency if not needed
             from openai import AzureOpenAI
             import httpx
 
-            # Create HTTP client without proxies
+            # Check for required environment variables first
+            api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+            endpoint = os.getenv("OPENAI_BASE_URL")
+            
+            if not api_key:
+                error = EmbeddingError(
+                    "Azure OpenAI API key not configured. Set AZURE_OPENAI_API_KEY or OPENAI_API_KEY.",
+                    details={"missing_var": "AZURE_OPENAI_API_KEY or OPENAI_API_KEY"}
+                )
+                logger.error(f"Configuration error: {error}")
+                if monitor and monitor.enabled:
+                    monitor.track_event("critical_config_error", {
+                        "service": "azure_openai",
+                        "error": "missing_api_key"
+                    })
+                raise error
+            
+            if not endpoint:
+                error = EmbeddingError(
+                    "Azure OpenAI endpoint not configured. Set OPENAI_BASE_URL.",
+                    details={"missing_var": "OPENAI_BASE_URL"}
+                )
+                logger.error(f"Configuration error: {error}")
+                raise error
+
             http_client = httpx.Client(
-                headers={"Accept-Encoding": "gzip, deflate"}
+                headers={"Accept-Encoding": "gzip, deflate"},
+                timeout=30.0
             )
             
-            # Initialize OpenAI client for search queries only
             openai_client = AzureOpenAI(
-                api_key=os.getenv("OPENAI_API_KEY"),
+                api_key=api_key,
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-                azure_endpoint=os.getenv("OPENAI_BASE_URL"),
+                azure_endpoint=endpoint,
                 http_client=http_client
             )
             
@@ -81,9 +142,53 @@ class QdrantClientWrapper:
             )
             return response.data[0].embedding
             
-        except Exception as e:
-            logger.error(f"Error generating search embedding: {e}")
+        except EmbeddingError:
+            # Re-raise our custom exceptions
             raise
+        except Exception as e:
+            error_str = str(e)
+            
+            # Create detailed error with proper categorization
+            error = EmbeddingError(
+                f"Failed to generate embedding: {error_str}",
+                original_error=e,
+                details={
+                    "deployment": self.embedding_deployment,
+                    "text_length": len(text),
+                    "endpoint": os.getenv("OPENAI_BASE_URL", "not_set")[:30] + "..."
+                }
+            )
+            
+            # Track to App Insights with proper categorization
+            if monitor and monitor.enabled:
+                category = "internal"
+                if HAS_CUSTOM_EXCEPTIONS and hasattr(error, 'category'):
+                    category = error.category.value if hasattr(error.category, 'value') else str(error.category)
+                
+                monitor.track_exception({
+                    "error": str(error),
+                    "category": category,
+                    "service": "azure_openai",
+                    "operation": "embedding",
+                    "deployment": self.embedding_deployment
+                })
+                
+                # Track as a critical event for alerting on auth/config issues
+                if "401" in error_str.lower() or "unauthorized" in error_str.lower() or "invalid" in error_str.lower():
+                    monitor.track_event("critical_api_error", {
+                        "service": "azure_openai",
+                        "category": "authentication",
+                        "error": error_str[:200]
+                    })
+                elif "404" in error_str.lower() or "not found" in error_str.lower():
+                    monitor.track_event("critical_api_error", {
+                        "service": "azure_openai",
+                        "category": "configuration",
+                        "error": error_str[:200]
+                    })
+            
+            logger.error(f"Embedding generation failed: {error}")
+            raise error
 
     def _generate_ai_summary(self, text_content: str) -> str:
         """Generate AI summary of the content using Azure OpenAI."""
@@ -195,23 +300,30 @@ class QdrantClientWrapper:
             use_ai_summary: Whether to generate AI summaries (slower but better).
             
         Returns:
-            List of matching documents with scores, or None on failure.
+            List of matching documents with scores.
+            
+        Raises:
+            EmbeddingError: If embedding generation fails (API key issues, etc.)
+            QdrantError: If Qdrant search fails
         """
         try:
             start_time = time.time()
             
-            # Generate query embedding using Azure OpenAI for search
-            if self.dependency_tracker:
-                # Wrap the synchronous embedding function in asyncio.to_thread
-                query_embedding = await self.dependency_tracker.track_async(
-                    asyncio.to_thread(self._get_embedding_for_search, query),
-                    name="generate_embedding",
-                    type_name="Azure OpenAI",
-                    target=self.embedding_deployment,
-                    properties={"query_length": str(len(query)), "operation": "embedding"}
-                )
-            else:
-                query_embedding = self._get_embedding_for_search(query)
+            # Generate query embedding - this will raise EmbeddingError if it fails
+            try:
+                if self.dependency_tracker:
+                    query_embedding = await self.dependency_tracker.track_async(
+                        asyncio.to_thread(self._get_embedding_for_search, query),
+                        name="generate_embedding",
+                        type_name="Azure OpenAI",
+                        target=self.embedding_deployment,
+                        properties={"query_length": str(len(query)), "operation": "embedding"}
+                    )
+                else:
+                    query_embedding = self._get_embedding_for_search(query)
+            except EmbeddingError:
+                # Re-raise embedding errors with full context for proper handling upstream
+                raise
             
             # Search in collection
             search_start_time = time.time()
@@ -297,9 +409,27 @@ class QdrantClientWrapper:
             
             return results
             
+        except EmbeddingError:
+            # Re-raise embedding errors so they can be handled properly upstream
+            raise
         except Exception as e:
-            logger.error(f"Error searching documents in Qdrant: {e}")
-            return None
+            # Wrap other errors in QdrantError for proper categorization
+            error = QdrantError(
+                f"Error searching documents: {str(e)}",
+                original_error=e,
+                details={"query": query[:100], "collection": self.collection_name}
+            )
+            logger.error(f"Search error: {error}")
+            
+            if monitor and monitor.enabled:
+                monitor.track_exception({
+                    "error": str(error),
+                    "service": "qdrant",
+                    "operation": "search",
+                    "collection": self.collection_name
+                })
+            
+            raise error
 
     
 

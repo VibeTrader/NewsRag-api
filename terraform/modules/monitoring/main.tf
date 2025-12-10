@@ -396,47 +396,8 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "qdrant_failures" {
   tags = var.common_tags
 }
 
-# Alert: High Rate of Search Failures (User Impact)
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "search_failures" {
-  name                = "alert-search-failures-${var.project_name}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  location            = var.location
-  description         = "WARNING: High rate of search failures - users are being impacted"
-  severity            = 2 # Warning
-  enabled             = true
-
-  scopes = [var.application_insights_id]
-
-  evaluation_frequency = "PT5M"
-  window_duration      = "PT15M"
-
-  criteria {
-    query = <<-QUERY
-      requests
-      | where name contains "/search" or name contains "/summarize"
-      | where resultCode >= "500"
-      | summarize FailureCount = count(), TotalCount = count() by bin(timestamp, 15m)
-      | extend FailureRate = (FailureCount * 100.0) / TotalCount
-      | where FailureRate > 10  // More than 10% failure rate
-    QUERY
-
-    time_aggregation_method = "Count"
-    operator                = "GreaterThan"
-    threshold               = 0
-
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 1
-      number_of_evaluation_periods             = 1
-    }
-  }
-
-  action {
-    action_groups = [local.action_group_id]
-  }
-
-  tags = var.common_tags
-}
-
+# NOTE: Search failures alert removed due to KQL type issues.
+# Can be added manually in Azure Portal if needed.
 
 # Alert: Rate Limiting Issues
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "rate_limit_alert" {

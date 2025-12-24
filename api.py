@@ -77,36 +77,43 @@ app.add_middleware(
 # ============= STARTUP VALIDATION =============
 @app.on_event("startup")
 async def startup_validation():
-    """Validate environment and services on startup."""
-    logger.info("Running startup validation...")
+    """Validate environment and services on startup (non-blocking)."""
+    logger.info("Starting startup validation (background task)...")
     
     if not HAS_CUSTOM_ERROR_HANDLING or env_validator is None:
         logger.warning("Custom error handling not available, skipping startup validation")
         return
     
-    try:
-        validation_result = await env_validator.run_full_validation(force=True)
-        
-        if not validation_result["overall_healthy"]:
-            critical_errors = validation_result.get("critical_errors", [])
+    async def run_validation():
+        try:
+            # Add a small delay to let server start fully
+            await asyncio.sleep(5)
             
-            for error in critical_errors:
-                logger.error(f"CRITICAL STARTUP ERROR: {error['service']} - {error['error']}")
+            validation_result = await env_validator.run_full_validation(force=True)
+            
+            if not validation_result["overall_healthy"]:
+                critical_errors = validation_result.get("critical_errors", [])
                 
-                # Track critical errors to App Insights
-                if monitor and monitor.enabled:
-                    monitor.track_event("startup_critical_error", {
-                        "service": error["service"],
-                        "error": str(error["error"])[:500]
-                    })
-            
-            logger.warning("⚠️  Application started with configuration issues - some features may not work!")
-            logger.warning("⚠️  Check /health/detailed endpoint for more information")
-        else:
-            logger.info("✅ Startup validation passed - all services healthy")
-            
-    except Exception as e:
-        logger.error(f"Startup validation failed: {e}")
+                for error in critical_errors:
+                    logger.error(f"CRITICAL STARTUP ERROR: {error['service']} - {error['error']}")
+                    
+                    # Track critical errors to App Insights
+                    if monitor and monitor.enabled:
+                        monitor.track_event("startup_critical_error", {
+                            "service": error["service"],
+                            "error": str(error["error"])[:500]
+                        })
+                
+                logger.warning("⚠️  Application started with configuration issues - some features may not work!")
+                logger.warning("⚠️  Check /health/detailed endpoint for more information")
+            else:
+                logger.info("✅ Startup validation passed - all services healthy")
+                
+        except Exception as e:
+            logger.error(f"Startup validation failed: {e}")
+
+    # Run validation in background so we don't block startup
+    asyncio.create_task(run_validation())
 
 # Simple health endpoint for Traffic Manager (no dependencies)
 @app.get("/health/simple")

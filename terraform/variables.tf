@@ -7,34 +7,39 @@
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
-  default     = "prod"
-  validation {
-    condition     = contains(["dev", "prod"], var.environment)
-    error_message = "Environment must be either 'dev' or 'prod'."
-  }
-}
-variable "existing_resource_group_name" {
-  description = "Name of the existing resource group to deploy into"
-  type        = string
-  default     = "vibetrader-RAG-rg"
-  
-}
-
-# App Service Configuration - Basic tier for cost-effective start
-variable "app_service_plan_sku" {
-  description = "SKU for App Service Plans (Basic for now, will scale later)"
-  type        = string
   default     = "B1" # Basic tier - cheapest option for testing
 }
 
-variable "app_service_plan_tier" {
-  description = "Tier for App Service Plans"
-  type        = string
-  default     = "Basic"
+# Scaling Configuration
+variable "min_replicas" {
+  description = "Minimum number of replicas"
+  type        = number
+  default     = 1
 }
 
-# Scaling Configuration (Basic tier has limited scaling)
-# variable "min_instances" {
+variable "max_replicas" {
+  description = "Maximum number of replicas"
+  type        = number
+  default     = 3
+}
+
+variable "cpu" {
+  description = "CPU cores per replica"
+  type        = number
+  default     = 0.5
+}
+
+variable "memory" {
+  description = "Memory per replica"
+  type        = string
+  default     = "1.0Gi"
+}
+
+variable "service_resource_group_name" {
+  description = "Resource Group for the Container App Service"
+  type        = string
+  default     = "" # Will default to existing_resource_group_name if empty
+}
 #   description = "Minimum number of instances for auto-scaling"
 #   type        = number
 #   default     = 1 # Basic tier minimum
@@ -51,36 +56,31 @@ variable "app_settings" {
   description = "Application settings for App Services"
   type        = map(string)
   default = {
+    # Core System
     WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
     WEBSITES_PORT                       = "8000"
     SCM_DO_BUILD_DURING_DEPLOYMENT      = "true"
     ENABLE_ORYX_BUILD                   = "true"
+    ENVIRONMENT                         = "production" # Overridden by var.environment in main.tf
+
+    # Python Configuration
+    PYTHON_VERSION   = "3.12"
+    PYTHONUNBUFFERED = "1"
     
-    # Python specific
-    PYTHON_VERSION = "3.12"
-    
-    # Application specific
-    ENVIRONMENT = "production"
-    
-    # Health check
-    HEALTH_CHECK_ENABLED = "true"
-    
-    # FastAPI specific
-    API_HOST = "0.0.0.0"
-    API_PORT = "8000"
-    
-    # You can add your application-specific settings here:
-    # OPENAI_BASE_URL = "https://your-azure-endpoint.openai.azure.com"
-    # AZURE_OPENAI_API_VERSION = "2024-02-01"
-    # AZURE_OPENAI_DEPLOYMENT = "your-deployment-name"
-    # AZURE_OPENAI_EMBEDDING_DEPLOYMENT = "your-embedding-deployment"
-    # AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
-    # EMBEDDING_DIMENSION = "3072"
-    # QDRANT_URL = "your-qdrant-url"
-    # QDRANT_COLLECTION_NAME = "news_articles"
-    # VECTOR_BACKEND = "qdrant"
-    # LLM_CLEANING_ENABLED = "true"
-    # LLM_TOKEN_LIMIT_PER_REQUEST = "4000"
+    # App Business Logic
+    CACHE_TTL                   = "3600"
+    DEFAULT_ARTICLE_LIMIT       = "50"
+    MAX_ARTICLE_CONTENT_CHARS   = "10000"
+    MAX_CHUNK_SIZE              = "1000"
+    SUMMARY_CACHE_SIZE          = "1000"
+    SUMMARY_CACHE_TTL           = "3600"
+
+    # FastAPI Specific
+    API_HOST                            = "0.0.0.0"
+    API_PORT                            = "8000"
+    HEALTH_CHECK_ENABLED                = "true"
+    WEBSITE_HEALTHCHECK_MAXPINGFAILURES = "10"
+    WEBSITES_CONTAINER_START_TIME_LIMIT = "1800"
   }
   sensitive = false # Set to true if you add sensitive values
 }
@@ -158,6 +158,12 @@ variable "use_existing_action_group" {
   default     = true  # Set to true to use your existing action group
 }
 
+variable "existing_resource_group_name" {
+  description = "Name of the existing CORE resource group (for Environment & Shared resources)"
+  type        = string
+  default     = "vibetraderCoreProduction"
+}
+
 variable "existing_action_group_name" {
   description = "Name of the existing action group"
   type        = string
@@ -168,4 +174,81 @@ variable "existing_action_group_rg" {
   description = "Resource group of the existing action group"
   type        = string
   default     = "Vibetrader_CoreProduction"  # Your existing RG
+}
+
+# Dynamic Tags
+variable "created_by" {
+  description = "Name of the person/system creating the resource"
+  type        = string
+  default     = "terraform"
+}
+
+variable "created_date" {
+  description = "Date of creation in YYYY-MM-DD format"
+  type        = string
+  default     = "2025-01-01" 
+}
+
+# ============================================
+# Sensitive Secrets (Passed via CI/CD)
+# ============================================
+
+variable "openai_api_key" {
+  description = "OpenAI API Key"
+  type        = string
+  sensitive   = true
+  default     = "" 
+}
+
+variable "qdrant_api_key" {
+  description = "Qdrant API Key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# ============================================
+# External Service Configuration (Passed via CI/CD Variables)
+# ============================================
+
+variable "azure_openai_api_version" {
+  description = "Azure OpenAI API Version"
+  type        = string
+  default     = ""
+}
+
+variable "azure_openai_deployment" {
+  description = "Azure OpenAI Deployment Name"
+  type        = string
+  default     = ""
+}
+
+variable "azure_openai_embedding_deployment" {
+  description = "Azure OpenAI Embedding Deployment Name"
+  type        = string
+  default     = ""
+}
+
+variable "azure_openai_embedding_model" {
+  description = "Azure OpenAI Embedding Model"
+  type        = string
+  default     = ""
+}
+
+variable "openai_base_url" {
+  description = "OpenAI Base URL"
+  type        = string
+  default     = ""
+}
+
+variable "qdrant_url" {
+  description = "Qdrant URL"
+  type        = string
+  default     = ""
+}
+
+variable "qdrant_collection_name" {
+  description = "Qdrant Collection Name"
+  type        = string
+  default     = ""
 }

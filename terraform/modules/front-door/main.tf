@@ -85,7 +85,7 @@ resource "azurerm_cdn_frontdoor_origin" "eu" {
 # India Origin
 # Only create the India origin if the variable is set at plan time (workaround for count limitation)
 resource "azurerm_cdn_frontdoor_origin" "india" {
-  count = var.environment == "prod" ? 1 : 0
+  count = var.environment == "prod" && var.india_app_service_hostname != "" ? 1 : 0
   name                          = "india-origin"
   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.main.id
 

@@ -117,14 +117,34 @@ class LangChainForexSummarizer:
     """LangChain-based forex market summarizer for comprehensive news analysis."""
     
     def __init__(self):
-        """Initialize the LangChain-based forex summarizer with Azure OpenAI client."""
+        """Initialize the LangChain-based forex summarizer."""
         # Configuration for LLM
-        max_tokens = int(os.getenv("MAX_TOKENS", "4000"))
-        temperature = float(os.getenv("TEMPERATURE", "0.7"))  # Keep high temperature as requested
-        request_timeout = int(os.getenv("LLM_TIMEOUT", "120"))  # Add timeout
+        self.max_tokens = int(os.getenv("MAX_TOKENS", "4000"))
+        self.temperature = float(os.getenv("TEMPERATURE", "0.7"))
+        self.request_timeout = int(os.getenv("LLM_TIMEOUT", "120"))
         
-        # Initialize the LLM with proper error handling
+        # Configuration for cache
+        self.cache_size = int(os.getenv("SUMMARY_CACHE_SIZE", "100"))
+        self.cache_ttl = int(os.getenv("SUMMARY_CACHE_TTL", "1800"))
+        
+        # Initialize cache (reuse existing cache manager)
+        self.cache = CacheManager(
+            max_size=self.cache_size,
+            default_ttl=self.cache_ttl
+        )
+        
+        self.llm = None
+        self.chain = None
+        
+        logger.info(f"LangChainForexSummarizer initialized (Lazy Loading). Cache: size={self.cache_size}, ttl={self.cache_ttl}s")
+    
+    def _ensure_initialized(self):
+        """Ensure LLM and Chain are initialized."""
+        if self.chain is not None:
+            return
+
         try:
+            logger.info("Initializing Azure OpenAI LLM components...")
             # Try both environment variable names for API key
             api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
             if not api_key:
@@ -135,44 +155,32 @@ class LangChainForexSummarizer:
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
                 api_key=api_key,
                 azure_endpoint=os.getenv("OPENAI_BASE_URL"),
-                temperature=temperature,
-                max_tokens=max_tokens,
-                request_timeout=request_timeout,  # Add explicit timeout
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                request_timeout=self.request_timeout,
             )
-            logger.info(f"LLM initialized with deployment: {os.getenv('AZURE_OPENAI_DEPLOYMENT')}, "
-                       f"temperature: {temperature}, max_tokens: {max_tokens}, timeout: {request_timeout}s")
+            
+            # Create chat prompt template
+            system_message_prompt = SystemMessagePromptTemplate.from_template(SYSTEM_TEMPLATE)
+            human_message_prompt = HumanMessagePromptTemplate.from_template(HUMAN_TEMPLATE)
+            chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, human_message_prompt])
+            
+            # Create the LLM chain
+            self.chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+            
+            # Add Langfuse monitoring if available
+            if langchain_monitoring and langchain_monitoring.enabled:
+                try:
+                    self.chain = langchain_monitoring.wrap_chain(self.chain, "forex_summary_chain")
+                    logger.info("Langfuse monitoring enabled for LangChain forex summarizer")
+                except Exception as e:
+                    logger.warning(f"Failed to set up Langfuse monitoring: {e}")
+                    
+            logger.info(f"LLM initialized with deployment: {os.getenv('AZURE_OPENAI_DEPLOYMENT')}")
+            
         except Exception as e:
             logger.error(f"Error initializing Azure OpenAI LLM: {e}")
             raise RuntimeError(f"Failed to initialize LLM: {e}")
-        
-        # Create chat prompt template
-        system_message_prompt = SystemMessagePromptTemplate.from_template(SYSTEM_TEMPLATE)
-        human_message_prompt = HumanMessagePromptTemplate.from_template(HUMAN_TEMPLATE)
-        chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, human_message_prompt])
-        
-        # Create the LLM chain
-        self.chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-        
-        # Add Langfuse monitoring if available
-        if langchain_monitoring and langchain_monitoring.enabled:
-            try:
-                self.chain = langchain_monitoring.wrap_chain(self.chain, "forex_summary_chain")
-                logger.info("Langfuse monitoring enabled for LangChain forex summarizer")
-            except Exception as e:
-                logger.warning(f"Failed to set up Langfuse monitoring: {e}")
-        
-        # Configuration for cache
-        self.cache_size = int(os.getenv("SUMMARY_CACHE_SIZE", "100"))
-        self.cache_ttl = int(os.getenv("SUMMARY_CACHE_TTL", "1800"))  # 30 minutes
-        
-        # Initialize cache (reuse existing cache manager)
-        self.cache = CacheManager(
-            max_size=self.cache_size,
-            default_ttl=self.cache_ttl
-        )
-        
-        logger.info(f"LangChainForexSummarizer initialized with model: {os.getenv('AZURE_OPENAI_DEPLOYMENT')}")
-        logger.info(f"Cache configuration: size={self.cache_size}, ttl={self.cache_ttl}s")
     
     def _get_cache_key(self, articles: List[Dict[str, Any]], query: str) -> str:
         """Generate a cache key based on article IDs and query."""
@@ -282,6 +290,9 @@ class LangChainForexSummarizer:
                 "tradeManagementGuidelines": [],
                 "timestamp": datetime.now().isoformat()
             }
+        
+        # Ensure LLM is initialized
+        self._ensure_initialized()
         
         # Create a trace for Langfuse at the beginning
         trace_id = None

@@ -56,36 +56,31 @@ variable "app_settings" {
   description = "Application settings for App Services"
   type        = map(string)
   default = {
+    # Core System
     WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
     WEBSITES_PORT                       = "8000"
     SCM_DO_BUILD_DURING_DEPLOYMENT      = "true"
     ENABLE_ORYX_BUILD                   = "true"
+    ENVIRONMENT                         = "production" # Overridden by var.environment in main.tf
+
+    # Python Configuration
+    PYTHON_VERSION   = "3.12"
+    PYTHONUNBUFFERED = "1"
     
-    # Python specific
-    PYTHON_VERSION = "3.12"
-    
-    # Application specific
-    ENVIRONMENT = "production"
-    
-    # Health check
-    HEALTH_CHECK_ENABLED = "true"
-    
-    # FastAPI specific
-    API_HOST = "0.0.0.0"
-    API_PORT = "8000"
-    
-    # You can add your application-specific settings here:
-    # OPENAI_BASE_URL = "https://your-azure-endpoint.openai.azure.com"
-    # AZURE_OPENAI_API_VERSION = "2024-02-01"
-    # AZURE_OPENAI_DEPLOYMENT = "your-deployment-name"
-    # AZURE_OPENAI_EMBEDDING_DEPLOYMENT = "your-embedding-deployment"
-    # AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
-    # EMBEDDING_DIMENSION = "3072"
-    # QDRANT_URL = "your-qdrant-url"
-    # QDRANT_COLLECTION_NAME = "news_articles"
-    # VECTOR_BACKEND = "qdrant"
-    # LLM_CLEANING_ENABLED = "true"
-    # LLM_TOKEN_LIMIT_PER_REQUEST = "4000"
+    # App Business Logic
+    CACHE_TTL                   = "3600"
+    DEFAULT_ARTICLE_LIMIT       = "50"
+    MAX_ARTICLE_CONTENT_CHARS   = "10000"
+    MAX_CHUNK_SIZE              = "1000"
+    SUMMARY_CACHE_SIZE          = "1000"
+    SUMMARY_CACHE_TTL           = "3600"
+
+    # FastAPI Specific
+    API_HOST                            = "0.0.0.0"
+    API_PORT                            = "8000"
+    HEALTH_CHECK_ENABLED                = "true"
+    WEBSITE_HEALTHCHECK_MAXPINGFAILURES = "10"
+    WEBSITES_CONTAINER_START_TIME_LIMIT = "1800"
   }
   sensitive = false # Set to true if you add sensitive values
 }

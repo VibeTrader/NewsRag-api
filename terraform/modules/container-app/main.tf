@@ -89,4 +89,11 @@ resource "azurerm_container_app" "main" {
   }
 
   tags = var.common_tags
+
+  lifecycle {
+    ignore_changes = [
+      template[0].container[0].image,
+      ingress[0].traffic_weight
+    ]
+  }
 }

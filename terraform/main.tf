@@ -135,7 +135,7 @@ module "container_apps" {
   container_app_environment_id = module.container_env.id
 
   container_image     = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-  target_port         = 80
+  target_port         = 8000
   
   # ... scaling config ...
   cpu           = var.cpu

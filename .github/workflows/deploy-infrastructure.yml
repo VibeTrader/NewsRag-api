@@ -25,53 +25,44 @@ permissions:
 env:
   TF_VERSION: '1.5.0'
   WORKING_DIRECTORY: './terraform'
-  # Set environment based on branch: 'prod' for main, 'dev' for dev
-  TF_VAR_environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-  TF_VAR_app_service_plan_sku: 'B1'
-  TF_VAR_app_service_plan_tier: 'Basic'
-  TF_VAR_health_check_path: '/health'
-  TF_VAR_alert_email: 'haripriyaveluchamy@aity.dev'
-  TF_VAR_log_retention_days: '30'
-  TF_VAR_existing_resource_group_name: 'vibetrader-RAG-rg'
+  # Environment Logic
+  TF_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
   
-  # ARM credentials shared across all Terraform steps
+  # Credentials
   ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
   ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
   ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
   ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
   ARM_USE_OIDC: false
   
-  # App settings
-  TF_VAR_app_settings: |
-    {
-      WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
-      WEBSITES_PORT = "8000"
-      SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
-      ENABLE_ORYX_BUILD = "true"
-      PYTHON_VERSION = "3.12"
-      ENVIRONMENT = ${{ github.ref == 'refs/heads/main' && '"production"' || '"development"' }}
-      HEALTH_CHECK_ENABLED = "true"
-      API_HOST = "0.0.0.0"
-      API_PORT = "8000"
-      AZURE_OPENAI_API_VERSION = "2025-01-01-preview"
-      AZURE_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
-      EMBEDDING_DIMENSION = "3072"
-      QDRANT_COLLECTION_NAME = "news_articles"
-      CACHE_TTL = "3600"
-      DEFAULT_ARTICLE_LIMIT = "50"
-      MAX_ARTICLE_CONTENT_CHARS = "10000"
-      MAX_CHUNK_SIZE = "1000"
-      SUMMARY_CACHE_SIZE = "1000"
-      SUMMARY_CACHE_TTL = "3600"
-    }
+  # Inject Secrets into Terraform Variables
+  TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+  TF_VAR_qdrant_api_key: ${{ secrets.QDRANT_API_KEY }}
+  
+  # Inject Config from GitHub Variables
+  TF_VAR_azure_openai_api_version: ${{ vars.AZURE_OPENAI_API_VERSION }}
+  TF_VAR_azure_openai_deployment: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+  TF_VAR_azure_openai_embedding_deployment: ${{ vars.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
+  TF_VAR_azure_openai_embedding_model: ${{ vars.AZURE_OPENAI_EMBEDDING_MODEL }}
+  TF_VAR_openai_base_url: ${{ vars.OPENAI_BASE_URL }}
+  TF_VAR_qdrant_url: ${{ vars.QDRANT_URL }}
+  TF_VAR_qdrant_collection_name: ${{ vars.QDRANT_COLLECTION_NAME }}
+  
+  # Inject Infrastructure Logic vars
+  TF_VAR_environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+  TF_VAR_service_resource_group_name: ${{ github.ref == 'refs/heads/main' && 'vibetraderCoreProduction' || 'VibetraderCoredevelopment' }}
+  TF_VAR_min_replicas: ${{ github.ref == 'refs/heads/main' && 1 || 0 }}
+  TF_VAR_max_replicas: ${{ github.ref == 'refs/heads/main' && 3 || 1 }}
+  TF_VAR_cpu: 0.5
+  TF_VAR_memory: "1.0Gi"
+  TF_VAR_created_by: "haripriya"
+  TF_VAR_created_date: "2025-12-24"
 
 jobs:
   terraform:
-    name: 'Terraform Multi-Region'
-    # Only run infra jobs in the main repo, never in forks
-    if: github.repository == 'VibeTrader/NewsRag-api'
+    name: 'Terraform'
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
     
     defaults:
       run:
@@ -79,150 +70,58 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     
     outputs:
-      us_app_service_name: ${{ steps.terraform_outputs.outputs.us_app_service_name }}
-      europe_app_service_name: ${{ steps.terraform_outputs.outputs.europe_app_service_name }}
-      india_app_service_name: ${{ steps.terraform_outputs.outputs.india_app_service_name }}
-      resource_group_name: ${{ steps.terraform_outputs.outputs.resource_group_name }}
+      acr_login_server: ${{ steps.terraform_outputs.outputs.acr_login_server }}
+      acr_name: ${{ steps.terraform_outputs.outputs.acr_name }}
     
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ env.TF_VERSION }}
 
-    - name: Terraform Init
-      run: |
-        echo "Getting storage account key for backend..."
-        STORAGE_KEY=$(az storage account keys list \
-          --resource-group terraform-state-rg \
-          --account-name tfstatevraag \
-          --query '[0].value' \
-          --output tsv)
-        
-        echo "Initializing Terraform backend..."
-        terraform init \
-          -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -backend-config="resource_group_name=terraform-state-rg" \
-          -backend-config="storage_account_name=tfstatevraag" \
-          -backend-config="container_name=terraform-state" \
-          -backend-config="key=newsraag-${{ env.TF_VAR_environment }}.tfstate" \
-          -backend-config="access_key=$STORAGE_KEY"
-        
-        echo "✓ Terraform initialized successfully"
-
-    - name: Terraform Plan
-      if: github.event.inputs.action != 'destroy'
-      run: |
-        echo "Creating deployment plan..."
-        terraform plan -out=tfplan
-
-    - name: Terraform Apply
-      if: github.event.inputs.action == 'apply' || github.event_name == 'push'
-      run: |
-        echo "Applying Terraform configuration..."
-        terraform apply -auto-approve tfplan
-      
-    - name: Terraform Destroy
-      # Only allow destroy from the main repo, never from forks
-      if: github.repository == 'VibeTrader/NewsRag-api' && github.event.inputs.action == 'destroy'
-      run: |
-        echo "Running terraform destroy..."
-        
-        # Run destroy
-        terraform destroy -auto-approve
-        
-    - name: Get Terraform Outputs
-      if: github.event.inputs.action != 'destroy' || github.event_name == 'push'
-      id: terraform_outputs
-      run: |
-        echo "Retrieving Terraform outputs..."
-        echo "us_app_service_name=$(terraform output -raw us_app_service_name)" >> $GITHUB_OUTPUT
-        echo "europe_app_service_name=$(terraform output -raw europe_app_service_name)" >> $GITHUB_OUTPUT
-        echo "india_app_service_name=$(terraform output -raw india_app_service_name)" >> $GITHUB_OUTPUT
-        echo "resource_group_name=$(terraform output -raw existing_resource_group_name)" >> $GITHUB_OUTPUT
-
-  configure_app_settings:
-    name: 'Configure App Settings with Secrets'
-    needs: terraform
-    if: github.repository == 'VibeTrader/NewsRag-api' && (github.event.inputs.action != 'destroy' || github.event_name == 'push')
-    runs-on: ubuntu-latest
-    environment: production
-    
-    strategy:
-      matrix:
-        # Only include India region in prod, not dev
-        region: ${{ fromJson(github.ref == 'refs/heads/main' && format('[{{"name":"US","app_name":"{0}","short_name":"us","location":"East US"}},{{"name":"Europe","app_name":"{1}","short_name":"eu","location":"North Europe"}},{{"name":"India","app_name":"{2}","short_name":"in","location":"Central India"}}]', needs.terraform.outputs.us_app_service_name, needs.terraform.outputs.europe_app_service_name, needs.terraform.outputs.india_app_service_name) || format('[{{"name":"US","app_name":"{0}","short_name":"us","location":"East US"}},{{"name":"Europe","app_name":"{1}","short_name":"eu","location":"North Europe"}}]', needs.terraform.outputs.us_app_service_name, needs.terraform.outputs.europe_app_service_name)) }}
-    
-    steps:
     - name: Azure Login
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Configure App Settings for ${{ matrix.region.name }}
+    - name: Terraform Init
       run: |
-        echo "🔧 Configuring app settings for ${{ matrix.region.name }} region..."
+        STORAGE_KEY=$(az storage account keys list \
+          --resource-group helpingtoolswithinframanage \
+          --account-name infraandautomationstore \
+          --query '[0].value' \
+          --output tsv)
         
-        az webapp config appsettings set \
-          --name ${{ matrix.region.app_name }} \
-          --resource-group ${{ needs.terraform.outputs.resource_group_name }} \
-          --settings \
-            DEPLOYMENT_REGION="${{ matrix.region.short_name }}" \
-            AZURE_REGION="${{ matrix.region.location }}" \
-            ENVIRONMENT="production" \
-            PORT="8000" \
-            API_HOST="0.0.0.0" \
-            API_PORT="8000" \
-            PYTHONUNBUFFERED="1" \
-            HEALTH_CHECK_ENABLED="true" \
-            WEBSITES_PORT="8000" \
-            WEBSITES_ENABLE_APP_SERVICE_STORAGE="false" \
-            SCM_DO_BUILD_DURING_DEPLOYMENT="true" \
-            ENABLE_ORYX_BUILD="true" \
-            OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
-            OPENAI_BASE_URL="${{ secrets.OPENAI_BASE_URL }}" \
-            AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION }}" \
-            AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
-            AZURE_OPENAI_EMBEDDING_DEPLOYMENT="${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}" \
-            AZURE_OPENAI_EMBEDDING_MODEL="${{ secrets.AZURE_OPENAI_EMBEDDING_MODEL }}" \
-            EMBEDDING_DIMENSION="3072" \
-            QDRANT_URL="${{ secrets.QDRANT_URL }}" \
-            QDRANT_API_KEY="${{ secrets.QDRANT_API_KEY }}" \
-            QDRANT_COLLECTION_NAME="${{ secrets.QDRANT_COLLECTION_NAME }}" \
-            CACHE_TTL="3600" \
-            DEFAULT_ARTICLE_LIMIT="50" \
-            MAX_ARTICLE_CONTENT_CHARS="10000" \
-            MAX_CHUNK_SIZE="1000" \
-            SUMMARY_CACHE_SIZE="1000" \
-            SUMMARY_CACHE_TTL="3600"
+        terraform init \
+          -backend-config="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+          -backend-config="resource_group_name=helpingtoolswithinframanage" \
+          -backend-config="storage_account_name=infraandautomationstore" \
+          -backend-config="container_name=terraformstatestore" \
+          -backend-config="key=newsrag-api-${{ env.TF_ENV }}.tfstate" \
+          -backend-config="access_key=$STORAGE_KEY"
 
-        echo "✅ App settings configured for ${{ matrix.region.name }}"
-
-  infrastructure_complete:
-    name: 'Infrastructure Deployment Complete'
-    needs: [terraform, configure_app_settings]
-    if: github.repository == 'VibeTrader/NewsRag-api' && (github.event.inputs.action != 'destroy' || github.event_name == 'push')
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Infrastructure Deployment Summary
+    - name: Terraform Plan
+      if: github.event.inputs.action != 'destroy'
       run: |
-        echo "🎉 Infrastructure deployment completed successfully!"
-        echo "📊 Infrastructure Summary:"
-        echo "  • US App Service: ${{ needs.terraform.outputs.us_app_service_name }}"
-        echo "  • Europe App Service: ${{ needs.terraform.outputs.europe_app_service_name }}"
-        echo "  • India App Service: ${{ needs.terraform.outputs.india_app_service_name }}"
-        echo "  • Resource Group: ${{ needs.terraform.outputs.resource_group_name }}"
-        echo ""
-        echo "✅ Infrastructure is ready for app deployment!"
-        echo "✅ App settings configured with secrets for all regions!"
-        echo "🚀 Your apps should now start successfully with proper configuration!"
+        terraform plan \
+          -out=tfplan
+
+    - name: Terraform Apply
+      if: github.event.inputs.action == 'apply' || github.event_name == 'push'
+      run: |
+        terraform apply -auto-approve tfplan
+      
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        terraform destroy -auto-approve
+
+    - name: Get Outputs
+      if: github.event.inputs.action != 'destroy'
+      id: terraform_outputs
+      run: |
+        echo "acr_login_server=$(terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
+        echo "acr_name=$(terraform output -raw acr_name)" >> $GITHUB_OUTPUT

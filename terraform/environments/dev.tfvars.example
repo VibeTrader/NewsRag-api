@@ -1,26 +1,26 @@
 # ============================================
-# Production Environment Configuration
-# Copy this to prod.tfvars to use
+# Development Environment Configuration
+# Copy this to dev.tfvars to use
 # ============================================
 
 # Environment configuration
-environment = "prod"
+environment = "dev"
 
 # Resource Group Overrides
-service_resource_group_name = "vibetraderCoreProduction"
+service_resource_group_name = "VibetraderCoredevelopment"
 
 # Dynamic Tags
 created_by   = "haripriya"
 created_date = "2025-12-24"
 
 # Container App Configuration
-# Production: High availability
-min_replicas = 1  # Keep at least one instance running
-max_replicas = 3 # Scale up to 10 for high traffic
+# Serverless: Scale to zero when not in use
+min_replicas = 0
+max_replicas = 1
 cpu          = 0.5
 memory       = "1.0Gi"
 
-# App Service tier configuration
+# App Service tier configuration (Legacy/unused by new module but kept for var validation)
 app_service_plan_sku  = "B1"
 app_service_plan_tier = "Basic"
 
@@ -29,7 +29,7 @@ health_check_path = "/health"
 
 # Alert configuration
 alert_email       = "haripriyaveluchamy@aity.dev"
-# slack_webhook_url = "https://hooks.slack.com/services/..." 
+slack_webhook_url = "" 
 
 # Log Analytics retention
 log_retention_days = 30
@@ -41,7 +41,7 @@ app_settings = {
   WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
   WEBSITES_PORT                       = "8000"
   SCM_DO_BUILD_DURING_DEPLOYMENT      = "true"
-  ENVIRONMENT                        = "production"
+  ENVIRONMENT                        = "development"
   PYTHON_VERSION                     = "3.12"
   PYTHONUNBUFFERED                   = "1"
   PORT                               = "8000"

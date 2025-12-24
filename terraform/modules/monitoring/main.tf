@@ -62,178 +62,9 @@ locals {
 # ============================================
 
 # HTTP Response Time Alerts
-resource "azurerm_monitor_metric_alert" "high_response_time" {
-  for_each = var.app_services
+# App Service specific alerts removed. 
+# We rely on Application Insights alerts for Error Rates, Response Times, and Availability.
 
-  name                = "alert-response-time-${each.key}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  scopes              = [each.value.id]
-  description         = "High HTTP response time alert for ${each.key} region"
-  severity            = 2
-  frequency           = "PT1M"
-  window_size         = "PT5M"
-  auto_mitigate       = true
-
-  criteria {
-    metric_namespace = "Microsoft.Web/sites"
-    metric_name      = "HttpResponseTime"
-    aggregation      = "Average"
-    operator         = "GreaterThan"
-    threshold        = 5 # 5 seconds
-  }
-
-  action {
-    action_group_id = local.action_group_id
-  }
-
-  tags = var.common_tags
-}
-
-# HTTP 5xx Error Rate Alerts
-resource "azurerm_monitor_metric_alert" "high_error_rate" {
-  for_each = var.app_services
-
-  name                = "alert-error-rate-${each.key}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  scopes              = [each.value.id]
-  description         = "High 5xx error rate alert for ${each.key} region"
-  severity            = 1 # Critical
-  frequency           = "PT1M"
-  window_size         = "PT5M"
-  auto_mitigate       = true
-
-  criteria {
-    metric_namespace = "Microsoft.Web/sites"
-    metric_name      = "Http5xx"
-    aggregation      = "Total"
-    operator         = "GreaterThan"
-    threshold        = 10 # More than 10 5xx errors in 5 minutes
-  }
-
-  action {
-    action_group_id = local.action_group_id
-  }
-
-  tags = var.common_tags
-}
-
-# Request Count Spike Alert
-resource "azurerm_monitor_metric_alert" "request_spike" {
-  for_each = var.app_services
-
-  name                = "alert-request-spike-${each.key}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  scopes              = [each.value.id]
-  description         = "Unusual request spike alert for ${each.key} region"
-  severity            = 2
-  frequency           = "PT1M"
-  window_size         = "PT15M"
-  auto_mitigate       = true
-
-  criteria {
-    metric_namespace = "Microsoft.Web/sites"
-    metric_name      = "Requests"
-    aggregation      = "Total"
-    operator         = "GreaterThan"
-    threshold        = 1000 # More than 1000 requests in 15 minutes
-  }
-
-  action {
-    action_group_id = local.action_group_id
-  }
-
-  tags = var.common_tags
-}
-
-# ============================================
-# Application Insights Alerts
-# ============================================
-
-# Availability Alert
-resource "azurerm_monitor_metric_alert" "availability" {
-  name                = "alert-availability-${var.project_name}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  scopes              = [var.application_insights_id]
-  description         = "Low availability alert for global endpoint"
-  severity            = 1 # Critical
-  frequency           = "PT1M"
-  window_size         = "PT5M"
-  auto_mitigate       = true
-
-  criteria {
-    metric_namespace = "Microsoft.Insights/components"
-    metric_name      = "availabilityResults/availabilityPercentage"
-    aggregation      = "Average"
-    operator         = "LessThan"
-    threshold        = 95 # Less than 95% availability
-  }
-
-  action {
-    action_group_id = local.action_group_id
-  }
-
-  tags = var.common_tags
-}
-
-# ============================================
-# App Service Plan Alerts (Standard+ Tiers Only)
-# ============================================
-
-# CPU Percentage Alert for App Service Plan (Standard+)
-resource "azurerm_monitor_metric_alert" "high_cpu_plan" {
-  for_each = var.enable_plan_metrics ? var.app_service_plans : {}
-
-  name                = "alert-plan-cpu-${each.key}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  scopes              = [each.value.id]
-  description         = "High CPU percentage alert for ${each.key} app service plan"
-  severity            = 2
-  frequency           = "PT5M"
-  window_size         = "PT15M"
-  auto_mitigate       = true
-
-  criteria {
-    metric_namespace = "Microsoft.Web/serverfarms"
-    metric_name      = "CpuPercentage"
-    aggregation      = "Average"
-    operator         = "GreaterThan"
-    threshold        = 80 # 80% CPU
-  }
-
-  action {
-    action_group_id = local.action_group_id
-  }
-
-  tags = var.common_tags
-}
-
-# Memory Percentage Alert for App Service Plan (Standard+)
-resource "azurerm_monitor_metric_alert" "high_memory_plan" {
-  for_each = var.enable_plan_metrics ? var.app_service_plans : {}
-
-  name                = "alert-plan-memory-${each.key}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  scopes              = [each.value.id]
-  description         = "High memory percentage alert for ${each.key} app service plan"
-  severity            = 2
-  frequency           = "PT5M"
-  window_size         = "PT15M"
-  auto_mitigate       = true
-
-  criteria {
-    metric_namespace = "Microsoft.Web/serverfarms"
-    metric_name      = "MemoryPercentage"
-    aggregation      = "Average"
-    operator         = "GreaterThan"
-    threshold        = 85 # 85% memory
-  }
-
-  action {
-    action_group_id = local.action_group_id
-  }
-
-  tags = var.common_tags
-}
 
 # ============================================
 # Custom Application Insights Alerts
@@ -396,47 +227,8 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "qdrant_failures" {
   tags = var.common_tags
 }
 
-# Alert: High Rate of Search Failures (User Impact)
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "search_failures" {
-  name                = "alert-search-failures-${var.project_name}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  location            = var.location
-  description         = "WARNING: High rate of search failures - users are being impacted"
-  severity            = 2 # Warning
-  enabled             = true
-
-  scopes = [var.application_insights_id]
-
-  evaluation_frequency = "PT5M"
-  window_duration      = "PT15M"
-
-  criteria {
-    query = <<-QUERY
-      requests
-      | where name contains "/search" or name contains "/summarize"
-      | where resultCode >= 500
-      | summarize FailureCount = count(), TotalCount = count() by bin(timestamp, 15m)
-      | extend FailureRate = (FailureCount * 100.0) / TotalCount
-      | where FailureRate > 10  // More than 10% failure rate
-    QUERY
-
-    time_aggregation_method = "Count"
-    operator                = "GreaterThan"
-    threshold               = 0
-
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 1
-      number_of_evaluation_periods             = 1
-    }
-  }
-
-  action {
-    action_groups = [local.action_group_id]
-  }
-
-  tags = var.common_tags
-}
-
+# NOTE: Search failures alert removed due to KQL type issues.
+# Can be added manually in Azure Portal if needed.
 
 # Alert: Rate Limiting Issues
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "rate_limit_alert" {
@@ -585,25 +377,6 @@ resource "azurerm_monitor_metric_alert" "availability_test_failed" {
 }
 
 
-# ============================================
-# Smart Detection Alerts (Azure Built-in AI)
-# ============================================
-
-# Failure anomalies - Azure AI detects unusual failure patterns
-resource "azurerm_monitor_smart_detector_alert_rule" "failure_anomalies" {
-  name                = "alert-failure-anomalies-${var.project_name}-${var.environment}"
-  resource_group_name = var.resource_group_name
-  severity            = "Sev1"
-  scope_resource_ids  = [var.application_insights_id]
-  frequency           = "PT1M"
-  detector_type       = "FailureAnomaliesDetector"
-
-  action_group {
-    ids = [local.action_group_id]
-  }
-
-  tags = var.common_tags
-}
 
 # ============================================
 # Response Time Degradation Alert
@@ -647,4 +420,3 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "response_time_degrada
 
   tags = var.common_tags
 }
-

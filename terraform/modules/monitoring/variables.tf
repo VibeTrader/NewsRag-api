@@ -29,29 +29,7 @@ variable "application_insights_id" {
   type        = string
 }
 
-variable "app_services" {
-  description = "Map of app services to monitor"
-  type = map(object({
-    id     = string
-    name   = string
-    region = string
-  }))
-}
-
-variable "app_service_plans" {
-  description = "Map of app service plans to monitor (Standard+ tiers only)"
-  type = map(object({
-    id   = string
-    name = string
-  }))
-  default = {}
-}
-
-variable "enable_plan_metrics" {
-  description = "Enable App Service Plan level metrics (only works with Standard+ tiers)"
-  type        = bool
-  default     = false # Set to true when upgrading to Standard+
-}
+# Removed app_services and app_service_plans variables as they are not used for ACA
 
 variable "alert_email" {
   description = "Email address for alerts"

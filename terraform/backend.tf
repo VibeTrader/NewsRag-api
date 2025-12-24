@@ -18,8 +18,8 @@ provider "azurerm" {
   # For local testing, either set ARM_SUBSCRIPTION_ID env var or uncomment below:
   # subscription_id = "your-subscription-id-here"
   
-  # Skip automatic resource provider registration (deprecated in v5.0)
-  skip_provider_registration = true
+  # Skip automatic resource provider registration (v4.0+ syntax)
+  resource_provider_registrations = "none"
   
   features {
     resource_group {

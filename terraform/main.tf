@@ -129,7 +129,7 @@ module "container_apps" {
   
   # Deploy to the Service Resource Group
   resource_group_name = data.azurerm_resource_group.service.name
-  region              = each.value.location
+  region              = each.value
   
   # Connect to the Shared Environment (in Core RG)
   container_app_environment_id = module.container_env.id

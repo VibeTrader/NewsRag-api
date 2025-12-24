@@ -15,7 +15,8 @@ variable "resource_group_name" {
 }
 
 variable "log_analytics_workspace_id" {
-  type = string
+  type    = string
+  default = null
 }
 
 variable "tags" {

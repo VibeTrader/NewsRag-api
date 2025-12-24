@@ -26,12 +26,32 @@ variable "container_app_environment_id" {
   type        = string
 }
 
-# log_analytics_workspace_id removed (handled by environment module)
-
 variable "container_image" {
   description = "Container image to deploy"
   type        = string
-  default     = "mcr.microsoft.com/azuredocs/aci-helloworld" # Placeholder default
+  default     = "mcr.microsoft.com/azuredocs/aci-helloworld"
+}
+
+# ============================================
+# REGISTRY AUTHENTICATION VARIABLES
+# ============================================
+variable "registry_server" {
+  description = "ACR login server (e.g., myregistry.azurecr.io)"
+  type        = string
+  default     = ""
+}
+
+variable "registry_username" {
+  description = "ACR admin username"
+  type        = string
+  default     = ""
+}
+
+variable "registry_password" {
+  description = "ACR admin password"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "target_port" {

@@ -17,12 +17,6 @@ locals {
 }
 
 # -----------------------------------------------------
-# Container App Environment (The "Cluster")
-# -----------------------------------------------------
-# Environment resource moved to ../container-env
-
-
-# -----------------------------------------------------
 # Container App (The Microservice)
 # -----------------------------------------------------
 resource "azurerm_container_app" "main" {
@@ -30,6 +24,27 @@ resource "azurerm_container_app" "main" {
   container_app_environment_id = var.container_app_environment_id
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
+
+  # ============================================
+  # REGISTRY AUTHENTICATION (REQUIRED FOR ACR)
+  # ============================================
+  dynamic "registry" {
+    for_each = var.registry_server != "" ? [1] : []
+    content {
+      server               = var.registry_server
+      username             = var.registry_username
+      password_secret_name = "acr-password"
+    }
+  }
+
+  # Secrets for registry authentication
+  dynamic "secret" {
+    for_each = var.registry_password != "" ? [1] : []
+    content {
+      name  = "acr-password"
+      value = var.registry_password
+    }
+  }
 
   # Ingress configuration (Public HTTP)
   ingress {
@@ -59,18 +74,26 @@ resource "azurerm_container_app" "main" {
         }
       }
       
-      # Liveness probe (Health check)
+      # Liveness probe - increased initial delay for Python apps
       liveness_probe {
-        port      = var.target_port
-        transport = "HTTP"
-        path      = var.health_check_path
+        port                    = var.target_port
+        transport               = "HTTP"
+        path                    = var.health_check_path
+        initial_delay_seconds   = 10
+        period_seconds          = 10
+        failure_threshold       = 3
+        timeout_seconds         = 5
       }
       
       # Readiness probe
       readiness_probe {
-        port      = var.target_port
-        transport = "HTTP"
-        path      = var.health_check_path
+        port              = var.target_port
+        transport         = "HTTP"
+        path              = var.health_check_path
+        period_seconds    = 10
+        success_threshold = 1
+        failure_threshold = 3
+        timeout_seconds   = 5
       }
     }
     

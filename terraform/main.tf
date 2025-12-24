@@ -137,6 +137,13 @@ module "container_apps" {
   container_image     = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
   target_port         = 8000
   
+  # ============================================
+  # ACR REGISTRY AUTHENTICATION
+  # ============================================
+  registry_server   = azurerm_container_registry.acr.login_server
+  registry_username = azurerm_container_registry.acr.admin_username
+  registry_password = azurerm_container_registry.acr.admin_password
+  
   # ... scaling config ...
   cpu           = var.cpu
   memory        = var.memory
@@ -171,7 +178,8 @@ module "container_apps" {
     } : {}
   )
   
-  health_check_path = var.health_check_path
+  # Use simpler health endpoint that doesn't require external dependencies
+  health_check_path = "/health/simple"
   
   common_tags = merge(local.base_tags, { service = "api" })
 }

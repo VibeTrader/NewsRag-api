@@ -47,6 +47,16 @@ env:
   TF_VAR_openai_base_url: ${{ vars.OPENAI_BASE_URL }}
   TF_VAR_qdrant_url: ${{ vars.QDRANT_URL }}
   TF_VAR_qdrant_collection_name: ${{ vars.QDRANT_COLLECTION_NAME }}
+  
+  # Inject Infrastructure Logic vars
+  TF_VAR_environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+  TF_VAR_service_resource_group_name: ${{ github.ref == 'refs/heads/main' && 'vibetraderCoreProduction' || 'VibetraderCoredevelopment' }}
+  TF_VAR_min_replicas: ${{ github.ref == 'refs/heads/main' && 1 || 0 }}
+  TF_VAR_max_replicas: ${{ github.ref == 'refs/heads/main' && 3 || 1 }}
+  TF_VAR_cpu: 0.5
+  TF_VAR_memory: "1.0Gi"
+  TF_VAR_created_by: "haripriya"
+  TF_VAR_created_date: "2025-12-24"
 
 jobs:
   terraform:

@@ -153,6 +153,9 @@ module "container_apps" {
       OPENAI_API_KEY = var.openai_api_key
       QDRANT_API_KEY = var.qdrant_api_key
       
+      # Ensure Environment matches Infrastructure
+      ENVIRONMENT = var.environment
+      
       # Inject External Service Config from Terraform Variables
       AZURE_OPENAI_API_VERSION          = var.azure_openai_api_version
       AZURE_OPENAI_DEPLOYMENT           = var.azure_openai_deployment

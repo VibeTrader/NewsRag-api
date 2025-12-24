@@ -10,14 +10,36 @@ variable "environment" {
   default     = "B1" # Basic tier - cheapest option for testing
 }
 
-variable "app_service_plan_tier" {
-  description = "Tier for App Service Plans"
-  type        = string
-  default     = "Basic"
+# Scaling Configuration
+variable "min_replicas" {
+  description = "Minimum number of replicas"
+  type        = number
+  default     = 1
 }
 
-# Scaling Configuration (Basic tier has limited scaling)
-# variable "min_instances" {
+variable "max_replicas" {
+  description = "Maximum number of replicas"
+  type        = number
+  default     = 3
+}
+
+variable "cpu" {
+  description = "CPU cores per replica"
+  type        = number
+  default     = 0.5
+}
+
+variable "memory" {
+  description = "Memory per replica"
+  type        = string
+  default     = "1.0Gi"
+}
+
+variable "service_resource_group_name" {
+  description = "Resource Group for the Container App Service"
+  type        = string
+  default     = "" # Will default to existing_resource_group_name if empty
+}
 #   description = "Minimum number of instances for auto-scaling"
 #   type        = number
 #   default     = 1 # Basic tier minimum

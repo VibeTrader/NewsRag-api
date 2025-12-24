@@ -7,22 +7,6 @@
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
-  default     = "prod"
-  validation {
-    condition     = contains(["dev", "prod"], var.environment)
-    error_message = "Environment must be either 'dev' or 'prod'."
-  }
-}
-variable "existing_resource_group_name" {
-  description = "Name of the existing resource group to deploy into"
-  type        = string
-  default     = "vibetrader-RAG-rg"
-  
-}
-
-# App Service Configuration - Basic tier for cost-effective start
-variable "app_service_plan_sku" {
-  description = "SKU for App Service Plans (Basic for now, will scale later)"
   type        = string
   default     = "B1" # Basic tier - cheapest option for testing
 }
@@ -158,6 +142,12 @@ variable "use_existing_action_group" {
   default     = true  # Set to true to use your existing action group
 }
 
+variable "existing_resource_group_name" {
+  description = "Name of the existing CORE resource group (for Environment & Shared resources)"
+  type        = string
+  default     = "vibetraderCoreProduction"
+}
+
 variable "existing_action_group_name" {
   description = "Name of the existing action group"
   type        = string
@@ -168,4 +158,81 @@ variable "existing_action_group_rg" {
   description = "Resource group of the existing action group"
   type        = string
   default     = "Vibetrader_CoreProduction"  # Your existing RG
+}
+
+# Dynamic Tags
+variable "created_by" {
+  description = "Name of the person/system creating the resource"
+  type        = string
+  default     = "terraform"
+}
+
+variable "created_date" {
+  description = "Date of creation in YYYY-MM-DD format"
+  type        = string
+  default     = "2025-01-01" 
+}
+
+# ============================================
+# Sensitive Secrets (Passed via CI/CD)
+# ============================================
+
+variable "openai_api_key" {
+  description = "OpenAI API Key"
+  type        = string
+  sensitive   = true
+  default     = "" 
+}
+
+variable "qdrant_api_key" {
+  description = "Qdrant API Key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# ============================================
+# External Service Configuration (Passed via CI/CD Variables)
+# ============================================
+
+variable "azure_openai_api_version" {
+  description = "Azure OpenAI API Version"
+  type        = string
+  default     = ""
+}
+
+variable "azure_openai_deployment" {
+  description = "Azure OpenAI Deployment Name"
+  type        = string
+  default     = ""
+}
+
+variable "azure_openai_embedding_deployment" {
+  description = "Azure OpenAI Embedding Deployment Name"
+  type        = string
+  default     = ""
+}
+
+variable "azure_openai_embedding_model" {
+  description = "Azure OpenAI Embedding Model"
+  type        = string
+  default     = ""
+}
+
+variable "openai_base_url" {
+  description = "OpenAI Base URL"
+  type        = string
+  default     = ""
+}
+
+variable "qdrant_url" {
+  description = "Qdrant URL"
+  type        = string
+  default     = ""
+}
+
+variable "qdrant_collection_name" {
+  description = "Qdrant Collection Name"
+  type        = string
+  default     = ""
 }

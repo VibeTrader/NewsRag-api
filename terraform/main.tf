@@ -34,14 +34,27 @@ locals {
 # ============================================
 
 # Core Infrastructure RG (Networking, Env, Monitoring)
+# Logic: valid "core" RG is Env specific.
+# If environment is dev, force usage of VibetraderCoredevelopment for everything if that's the requirement,
+# OR trust the variables to be passed correctly.
+# Given the user request "needs to be in VibetraderCoredevelopment", I'll enforce default logic here.
+
+locals {
+  # Default Core RG based on environment if not explicitly set to something else? 
+  # Actually, the variable `existing_resource_group_name` has a default of "vibetraderCoreProduction".
+  # We should override this logic if we are in dev.
+  
+  effective_core_rg_name = var.environment == "dev" ? "VibetraderCoredevelopment" : var.existing_resource_group_name
+}
+
 data "azurerm_resource_group" "core" {
-  name = var.existing_resource_group_name
+  name = local.effective_core_rg_name
 }
 
 # Service RG (Where the App runs)
 # If service_resource_group_name is provided, use it. Otherwise use core.
 locals {
-  service_rg_name = var.service_resource_group_name != "" ? var.service_resource_group_name : var.existing_resource_group_name
+  service_rg_name = var.service_resource_group_name != "" ? var.service_resource_group_name : local.effective_core_rg_name
   
   # Tags Strategy
   # Base tags applied to all resources. Service tag is injected per resource.
@@ -58,9 +71,9 @@ data "azurerm_resource_group" "service" {
   name = local.service_rg_name
 }
 
-# Use existing resource group
+# Use existing resource group (alias for consistency with front door)
 data "azurerm_resource_group" "existing" {
-  name = var.existing_resource_group_name
+  name = local.effective_core_rg_name
 }
 
 # Azure Container Registry (Shared for all images)
@@ -76,8 +89,9 @@ resource "azurerm_container_registry" "acr" {
 }
 
 # Shared Log Analytics Workspace (Required for Container Apps Environment)
+# ONLY create in PROD. User request: "creating log workspace for dev we dont want that"
 resource "azurerm_log_analytics_workspace" "shared" {
-  # count               = var.environment == "prod" ? 1 : 0 # Always need one for ACA Environment
+  count               = var.environment == "prod" ? 1 : 0 
   name                = "logs-${local.project_name}-shared-${local.environment}"
   location            = data.azurerm_resource_group.core.location
   resource_group_name = data.azurerm_resource_group.core.name
@@ -93,7 +107,7 @@ resource "azurerm_application_insights" "shared" {
   name                = "insights-${local.project_name}-shared-${local.environment}"
   location            = data.azurerm_resource_group.core.location
   resource_group_name = data.azurerm_resource_group.core.name
-  workspace_id        = azurerm_log_analytics_workspace.shared.id
+  workspace_id        = azurerm_log_analytics_workspace.shared[0].id
   application_type    = "web"
   
   tags = merge(local.base_tags, { service = "logging" })
@@ -109,7 +123,7 @@ module "container_env" {
   environment                = local.environment
   location                   = data.azurerm_resource_group.core.location
   resource_group_name        = data.azurerm_resource_group.core.name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.shared.id
+  log_analytics_workspace_id = var.environment == "prod" ? azurerm_log_analytics_workspace.shared[0].id : null
   
   tags = merge(local.base_tags, { service = "compute" })
 }

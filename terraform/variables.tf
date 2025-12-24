@@ -7,7 +7,6 @@
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
-  type        = string
   default     = "B1" # Basic tier - cheapest option for testing
 }
 

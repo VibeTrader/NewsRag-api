@@ -1,23 +1,32 @@
-# Use an official Python runtime as a parent image
-FROM python:3.12-slim
+# Build stage
+FROM python:3.12-slim as builder
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
 COPY requirements.txt .
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies into a temporary location
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# Copy the rest of the application code
+# Final stage
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy application code
 COPY . .
 
-# Expose port 8000 (Default for FastAPI/Uvicorn)
-EXPOSE 8000
-
-# Define environment variable
+# Environment variables
+ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
 
-# Run uvicorn server
+EXPOSE 8000
+
 CMD ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]

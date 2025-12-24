@@ -7,7 +7,7 @@ output "container_app_name" {
 }
 
 output "container_app_fqdn" {
-  value = azurerm_container_app.main.latest_revision_fqdn
+  value = azurerm_container_app.main.ingress[0].fqdn
 }
 
 # Output removed (Environment created in separate module)

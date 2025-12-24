@@ -79,21 +79,21 @@ resource "azurerm_container_app" "main" {
         port                    = var.target_port
         transport               = "HTTP"
         path                    = var.health_check_path
-        initial_delay_seconds   = 10
-        period_seconds          = 10
-        failure_threshold       = 3
-        timeout_seconds         = 5
+        initial_delay           = 10
+        interval_seconds        = 10
+        failure_count_threshold = 3
+        timeout                 = 5
       }
       
       # Readiness probe
       readiness_probe {
-        port              = var.target_port
-        transport         = "HTTP"
-        path              = var.health_check_path
-        period_seconds    = 10
-        success_threshold = 1
-        failure_threshold = 3
-        timeout_seconds   = 5
+        port                    = var.target_port
+        transport               = "HTTP"
+        path                    = var.health_check_path
+        interval_seconds        = 10
+        success_count_threshold = 1
+        failure_count_threshold = 3
+        timeout                 = 5
       }
     }
     
